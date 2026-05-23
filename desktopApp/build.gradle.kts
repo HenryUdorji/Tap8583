@@ -27,7 +27,7 @@ compose.desktop {
         mainClass = "com.tap8583.tap8583.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Pkg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb)
             packageName = "com.tap8583.tap8583"
             packageVersion = "1.0.0"
         }
