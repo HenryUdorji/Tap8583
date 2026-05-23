@@ -6,23 +6,21 @@ The `visualizer-log-listener-1.0.0.jar` lets any jPOS application stream live tr
 
 ## 1 — Add the JAR to your POS project
 
+### Get the JAR
+The compiled JAR library is generated at the following path in the library project:
+`build/libs/visualizer-log-listener-1.0.0.jar`
+
+Copy this JAR into your Android project's `libs/` folder.
+
 ### Android / Gradle
-Copy the JAR into your project's `libs/` folder, then in `build.gradle`:
+> [!IMPORTANT]
+> This library is strictly intended for **debug builds only** to prevent visualizer/debug instrumentation from leaking into production. Always use `debugImplementation` rather than `implementation` or `api`.
+
+In your `app/build.gradle`:
 ```groovy
 dependencies {
-    implementation files('libs/visualizer-log-listener-1.0.0.jar')
+    debugImplementation files('libs/visualizer-log-listener-1.0.0.jar')
 }
-```
-
-### Maven
-```xml
-<dependency>
-    <groupId>com.tap8583.visualizer</groupId>
-    <artifactId>visualizer-log-listener</artifactId>
-    <version>1.0.0</version>
-    <scope>system</scope>
-    <systemPath>${project.basedir}/libs/visualizer-log-listener-1.0.0.jar</systemPath>
-</dependency>
 ```
 
 ---
@@ -40,9 +38,9 @@ dependencies {
 
 ## 3 — Register the listener in your jPOS app
 
-You can register the listener either programmatically or via jPOS Q2 XML logger configuration.
+You can register the listener programmatically.
 
-### 3.1 — Programmatic Setup (Android / JVM)
+### Programmatic Setup (Android / JVM)
 
 Ideal for Android apps or direct code configuration:
 
@@ -63,26 +61,6 @@ myChannel.logger.addListener(visualizer)
 ```
 
 > The listener connects in the background — it will not block your app startup.
-
-### 3.2 — Q2 XML Logger Setup (JVM / Backend)
-
-Ideal for standard jPOS `Q2` systems. Add this block under your main XML logger (usually `deploy/10_logger.xml`):
-
-```xml
-<logger name="Q2">
-  <!-- Existing log listener — kept unchanged -->
-  <log-listener class="org.jpos.util.SimpleLogListener">
-    <property name="file" value="log/q2.log"/>
-  </log-listener>
-
-  <!-- Add this block — Tap8583 visualizer bridge -->
-  <log-listener class="com.tap8583.visualizer.VisualizerLogListener">
-    <property name="host" value="192.168.1.42"/>
-    <property name="port" value="9999"/>
-    <property name="enabled" value="true"/>
-  </log-listener>
-</logger>
-```
 
 ---
 
