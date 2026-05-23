@@ -99,9 +99,32 @@ fun PacketInspector(
                         )
                     }
                     CenterTab.RAW -> {
-                        val rawXml = tx.request?.rawEvent?.rawXml
-                            ?: tx.response?.rawEvent?.rawXml
-                            ?: ""
+                        val rawXml = buildString {
+                            val req = tx.request
+                            val resp = tx.response
+
+                            if (req != null) {
+                                append("<!-- ")
+                                append(req.rawEvent.direction.name)
+                                append(" REQUEST (")
+                                append(req.mti.raw)
+                                append(") -->\n")
+                                append(req.rawEvent.rawXml)
+                            }
+
+                            if (req != null && resp != null) {
+                                append("\n\n")
+                            }
+
+                            if (resp != null) {
+                                append("<!-- ")
+                                append(resp.rawEvent.direction.name)
+                                append(" RESPONSE (")
+                                append(resp.mti.raw)
+                                append(") -->\n")
+                                append(resp.rawEvent.rawXml)
+                            }
+                        }
                         RawXmlView(
                             rawXml   = rawXml,
                             modifier = Modifier.fillMaxSize()

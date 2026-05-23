@@ -53,6 +53,7 @@ object FieldDecoders {
         50   -> decodeCurrency(rawValue)
         51   -> decodeCurrency(rawValue)
         52   -> DecodeResult("████████████████  [Encrypted PIN block — 8 bytes, 3DES/ANSI X9.8]")
+        54   -> decodeField54(rawValue)
         59   -> decodeNibssReference(rawValue)
         62   -> decodeField62(rawValue)
         70   -> decodeNetworkManagementCode(rawValue)
@@ -692,6 +693,69 @@ object FieldDecoders {
         "11" -> "November"
         "12" -> "December"
         else -> mm
+    }
+
+    // -----------------------------------------------------------------------
+    // DE54 — Additional Amounts
+    // -----------------------------------------------------------------------
+
+    fun decodeField54(raw: String): DecodeResult {
+        if (raw.isEmpty()) {
+            return DecodeResult("0.00")
+        }
+        if (raw.length < 20) {
+            return try {
+                val amount = raw.toDouble() / 100.0
+                DecodeResult("%,.2f".format(amount))
+            } catch (e: Throwable) {
+                DecodeResult(raw)
+            }
+        }
+        return try {
+            val amountVal = raw.substring(9, 20).toDouble()
+            val amount = amountVal / 100.0
+
+            val accountType = raw.substring(0, 2)
+            val amountType = raw.substring(2, 4)
+            val currencyCode = raw.substring(4, 7)
+            val sign = raw.substring(7, 8)
+
+            val accLabel = when (accountType) {
+                "10" -> "Savings"
+                "20" -> "Cheque / Current"
+                "30" -> "Credit"
+                else -> "Account Type $accountType"
+            }
+
+            val amtTypeLabel = when (amountType) {
+                "01" -> "Ledger Balance"
+                "02" -> "Available Balance"
+                else -> "Amount Type $amountType"
+            }
+
+            val currency = CurrencyTable.lookup(currencyCode)
+            val symbol = currency?.symbol ?: "₦"
+            val curName = currency?.name ?: "Naira"
+
+            val formattedAmount = "%,.2f".format(amount)
+            val displaySign = if (sign == "C") "Credit" else "Debit"
+            val displayAmount = "$symbol$formattedAmount"
+
+            val summary = "$amtTypeLabel: $displayAmount ($accLabel)"
+
+            DecodeResult(
+                decodedValue = summary,
+                subFields = listOf(
+                    SubField("Account Type", accountType, accLabel),
+                    SubField("Amount Type",  amountType,  amtTypeLabel),
+                    SubField("Currency",     currencyCode, "$curName ($symbol)"),
+                    SubField("Sign",         sign,         displaySign),
+                    SubField("Amount",       raw.substring(8), displayAmount)
+                )
+            )
+        } catch (e: Throwable) {
+            DecodeResult(raw)
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -116,6 +116,19 @@ private fun syntaxHighlight(xml: String): AnnotatedString = buildAnnotatedString
 
     while (i < n) {
         when {
+            // Comment
+            xml[i] == '<' && i + 3 < n && xml[i + 1] == '!' && xml[i + 2] == '-' && xml[i + 3] == '-' -> {
+                val commentStart = i
+                i += 4
+                while (i + 2 < n && !(xml[i] == '-' && xml[i + 1] == '-' && xml[i + 2] == '>')) {
+                    i++
+                }
+                if (i + 2 < n) i += 3 else i = n
+                pushStyle(SpanStyle(color = ColorPunct, fontWeight = FontWeight.Normal))
+                append(xml.substring(commentStart, i))
+                pop()
+            }
+
             // Opening tag
             xml[i] == '<' && i + 1 < n && xml[i + 1] != '/' -> {
                 // Angle bracket

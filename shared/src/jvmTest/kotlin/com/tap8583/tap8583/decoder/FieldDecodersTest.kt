@@ -326,4 +326,22 @@ class FieldDecodersTest {
         val mccSub = result.subFields.first { it.name.contains("Category Code") }
         assertTrue(mccSub.decodedValue.contains("Financial"))
     }
+
+    // -----------------------------------------------------------------------
+    // DE54 — Additional Amounts
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `DE54 extracts and decodes additional amount correctly`() {
+        val result = FieldDecoders.decodeField54("1002566C000000012345")
+        assertTrue(result.decodedValue.contains("Available Balance"))
+        assertTrue(result.decodedValue.contains("₦123.45") || result.decodedValue.contains("₦ 123.45"))
+        assertTrue(result.decodedValue.contains("Savings"))
+
+        assertEquals(5, result.subFields.size)
+        assertEquals("Savings", result.subFields.first { it.name == "Account Type" }.decodedValue)
+        assertEquals("Available Balance", result.subFields.first { it.name == "Amount Type" }.decodedValue)
+        assertEquals("Credit", result.subFields.first { it.name == "Sign" }.decodedValue)
+        assertTrue(result.subFields.first { it.name == "Currency" }.decodedValue.contains("Naira"))
+    }
 }

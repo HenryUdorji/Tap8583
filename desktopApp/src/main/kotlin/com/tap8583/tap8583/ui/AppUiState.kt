@@ -53,7 +53,7 @@ data class AppUiState(
         get() = when (centerTab) {
             CenterTab.REQUEST  -> selectedTransaction?.request
             CenterTab.RESPONSE -> selectedTransaction?.response
-            CenterTab.RAW      -> selectedTransaction?.request   // raw XML always from request
+            CenterTab.RAW      -> selectedTransaction?.request ?: selectedTransaction?.response
         }
 
     /** The selected DecodedField (for the right-panel detail view) */
