@@ -33,3 +33,12 @@ compose.desktop {
         }
     }
 }
+
+// Prints the app version to stdout so CI can capture it via:
+//   ./gradlew -q :desktopApp:printVersion
+tasks.register("printVersion") {
+    val version = compose.desktop.application.nativeDistributions.packageVersion
+    doLast {
+        println(version)
+    }
+}
