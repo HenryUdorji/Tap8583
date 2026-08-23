@@ -32,9 +32,11 @@ dependencies {
     // jPOS is provided by the host application at runtime — never bundle it
     compileOnly("org.jpos:jpos:2.1.9")
 
-    // Kotlin stdlib is ALWAYS provided by the host Kotlin project — compileOnly avoids
-    // version conflicts when the host uses Kotlin 1.6, 1.7, 1.8, 1.9, or 2.x
+    // Kotlin stdlib is provided by host
     compileOnly(kotlin("stdlib"))
+
+    // OkHttp for HTTPS connection pooling and streaming
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 
 tasks.jar {

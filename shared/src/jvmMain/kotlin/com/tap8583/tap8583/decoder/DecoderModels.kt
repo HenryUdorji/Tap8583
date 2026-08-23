@@ -165,5 +165,6 @@ data class DecodedTransaction(
     val request: DecodedPacket?,
     val response: DecodedPacket?,
     val status: TransactionStatus,
-    val rttMs: Long?
+    val rttMs: Long?,
+    val serial: String? = null
 )

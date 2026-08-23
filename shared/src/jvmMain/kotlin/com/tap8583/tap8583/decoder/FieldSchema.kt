@@ -139,7 +139,7 @@ object FieldSchema {
         put(117, def(117, "Reserved National",                   "RSVD 117",     "ans", "LLLVAR", 999,"Reserved for national use.", category = FieldCategory.GENERAL))
         put(118, def(118, "Reserved National",                   "RSVD 118",     "ans", "LLLVAR", 999,"Reserved for national use.", category = FieldCategory.GENERAL))
         put(119, def(119, "Reserved National",                   "RSVD 119",     "ans", "LLLVAR", 999,"Reserved for national use.", category = FieldCategory.GENERAL))
-        put(120, def(120, "Reserved Private",                    "RSVD 120",     "ans", "LLLVAR", 999,"Reserved for private use.", category = FieldCategory.GENERAL))
+        put(120, def(120, "POS Terminal Location Data",          "POS LOCATION", "ans", "LLLVAR", 999,"POS terminal GPS coordinates (Latitude, Longitude) at transaction time.", category = FieldCategory.POS_TERMINAL))
         put(121, def(121, "Reserved Private",                    "RSVD 121",     "ans", "LLLVAR", 999,"Reserved for private use.", category = FieldCategory.GENERAL))
         put(122, def(122, "Reserved Private",                    "RSVD 122",     "ans", "LLLVAR", 999,"Reserved for private use.", category = FieldCategory.GENERAL))
         put(123, def(123, "NIBSS Terminal Capabilities",         "NIBSS CAPS",   "ans", "LLLVAR", 999,"NIBSS PTSP terminal capability flags string.", category = FieldCategory.PRIVATE_NIBSS))

@@ -69,6 +69,7 @@ object JposXmlParser {
         private var capturedAt: Instant = Instant.EPOCH
         private var lifespanMs: Long = 0L
         private var tag: String = ""
+        private var serial: String? = null
 
         // --- isomsg-level attributes ---
         private var direction: Direction = Direction.OUTGOING
@@ -89,8 +90,9 @@ object JposXmlParser {
             when (qName) {
                 "visualizer-event" -> {
                     insideVisualizerEvent = true
-                    realm = attributes.getValue("realm") ?: ""
-                    tag   = attributes.getValue("tag") ?: ""
+                    realm  = attributes.getValue("realm") ?: ""
+                    tag    = attributes.getValue("tag") ?: ""
+                    serial = attributes.getValue("serial")
 
                     // Parse timestamp — jPOS may omit trailing 'Z' or use space
                     val atStr = attributes.getValue("at") ?: ""
@@ -141,7 +143,8 @@ object JposXmlParser {
                 lifespanMs  = lifespanMs,
                 direction   = direction,
                 rawXml      = rawXml,
-                fields      = fields.toMap()
+                fields      = fields.toMap(),
+                serial      = serial
             )
         }
     }

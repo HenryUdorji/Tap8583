@@ -107,18 +107,21 @@ class TransactionMatcher(
             response  = null,
             status    = TransactionStatus.PENDING,
             rttMs     = null,
-            createdAt = event.capturedAt
+            createdAt = event.capturedAt,
+            serial    = event.serial
         )
         allTransactions.add(tx)
         if (!stan.isNullOrBlank()) {
-            pendingByStan[stan] = tx
+            val key = "${event.serial ?: ""}:$stan"
+            pendingByStan[key] = tx
         }
         return tx
     }
 
     private fun handleIncoming(event: RawLogEvent, stan: String?): Transaction {
         if (!stan.isNullOrBlank()) {
-            val pending = pendingByStan.remove(stan)
+            val key = "${event.serial ?: ""}:$stan"
+            val pending = pendingByStan.remove(key)
             if (pending != null) {
                 // Matched pair
                 val rtt = java.time.Duration.between(
@@ -129,7 +132,8 @@ class TransactionMatcher(
                 val matched = pending.copy(
                     response = event,
                     status   = status,
-                    rttMs    = rtt
+                    rttMs    = rtt,
+                    serial   = event.serial ?: pending.serial
                 )
                 val idx = allTransactions.indexOfFirst { it.id == pending.id }
                 if (idx >= 0) allTransactions[idx] = matched
@@ -145,7 +149,8 @@ class TransactionMatcher(
             response  = event,
             status    = TransactionStatus.ORPHAN,
             rttMs     = null,
-            createdAt = event.capturedAt
+            createdAt = event.capturedAt,
+            serial    = event.serial
         )
         allTransactions.add(orphan)
         return orphan
@@ -229,7 +234,8 @@ data class Transaction(
     val response: RawLogEvent?,
     val status: TransactionStatus,
     val rttMs: Long?,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val serial: String? = null
 )
 
 /** Events emitted by the matcher for toast/alert consumers */

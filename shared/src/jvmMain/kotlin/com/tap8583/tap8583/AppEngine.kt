@@ -184,7 +184,8 @@ class AppEngine(
             request  = decodedRequest,
             response = decodedResponse,
             status   = status,
-            rttMs    = rttMs
+            rttMs    = rttMs,
+            serial   = serial
         )
     }
 
