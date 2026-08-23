@@ -3,25 +3,25 @@
 # ==========================================
 
 # 1. Build Stage
-FROM eclipse-temurin:21-jdk-alpine AS build
+FROM eclipse-temurin:21-jdk-jammy AS build
 WORKDIR /app
 
-# Copy gradle wrapper and build configurations
+# Copy gradle wrapper and configurations
 COPY gradle gradle
 COPY gradlew build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY shared shared
 COPY listenerLib listenerLib
 COPY serverApp serverApp
 
-# Grant execution rights and build distribution bundle
+# Build distribution bundle using container JDK
 RUN chmod +x ./gradlew
-RUN ./gradlew :serverApp:installDist --no-daemon
+RUN ./gradlew :serverApp:installDist --no-daemon -Dorg.gradle.java.installations.auto-download=false
 
 # 2. Runtime Stage
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
-# Copy installed distribution from build stage
+# Copy installed application distribution
 COPY --from=build /app/serverApp/build/install/serverApp ./
 
 EXPOSE 8080
