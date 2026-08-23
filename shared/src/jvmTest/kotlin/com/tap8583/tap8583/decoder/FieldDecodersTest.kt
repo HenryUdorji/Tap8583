@@ -344,4 +344,56 @@ class FieldDecodersTest {
         assertEquals("Credit", result.subFields.first { it.name == "Sign" }.decodedValue)
         assertTrue(result.subFields.first { it.name == "Currency" }.decodedValue.contains("Naira"))
     }
+
+    // -----------------------------------------------------------------------
+    // DE120 — POS Terminal Location Data
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun `DE120 decodes standard positive latitude and longitude correctly`() {
+        val raw = "06.5244,003.3792"
+        val result = FieldDecoders.decode(120, raw, emptyMap())
+        assertNotNull(result)
+        assertEquals("06.5244° N, 003.3792° E", result!!.decodedValue)
+
+        assertEquals(4, result.subFields.size)
+        val latSub = result.subFields.first { it.name == "Latitude" }
+        assertEquals("06.5244° N (North (N))", latSub.decodedValue)
+
+        val lonSub = result.subFields.first { it.name == "Longitude" }
+        assertEquals("003.3792° E (East (E))", lonSub.decodedValue)
+
+        val mapSub = result.subFields.first { it.name == "Map Query" }
+        assertTrue(mapSub.rawValue.contains("06.5244,003.3792"))
+    }
+
+    @Test
+    fun `DE120 decodes negative southern and western coordinates correctly`() {
+        val raw = "-33.8688,-151.2093"
+        val result = FieldDecoders.decodePosLocation(raw)
+        assertEquals("33.8688° S, 151.2093° W", result.decodedValue)
+
+        val latSub = result.subFields.first { it.name == "Latitude" }
+        assertTrue(latSub.decodedValue.contains("South"))
+
+        val lonSub = result.subFields.first { it.name == "Longitude" }
+        assertTrue(lonSub.decodedValue.contains("West"))
+
+        val mapSub = result.subFields.first { it.name == "Map Query" }
+        assertTrue(mapSub.rawValue.contains("-33.8688,-151.2093"))
+    }
+
+    @Test
+    fun `DE120 handles zero coordinates at equator and meridian`() {
+        val raw = "00.0000,000.0000"
+        val result = FieldDecoders.decodePosLocation(raw)
+        assertEquals("00.0000° N, 000.0000° E", result.decodedValue)
+    }
+
+    @Test
+    fun `DE120 handles single coordinate string gracefully`() {
+        val raw = "06.5244"
+        val result = FieldDecoders.decodePosLocation(raw)
+        assertTrue(result.decodedValue.contains("06.5244"))
+    }
 }

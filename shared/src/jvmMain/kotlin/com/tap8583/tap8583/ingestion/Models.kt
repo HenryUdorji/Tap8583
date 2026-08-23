@@ -62,5 +62,6 @@ data class RawLogEvent(
     val lifespanMs: Long,
     val direction: Direction,
     val rawXml: String,
-    val fields: Map<Int, RawField>
+    val fields: Map<Int, RawField>,
+    val serial: String? = null
 )

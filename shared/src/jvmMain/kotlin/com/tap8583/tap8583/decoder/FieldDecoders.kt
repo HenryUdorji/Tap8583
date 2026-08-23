@@ -57,6 +57,7 @@ object FieldDecoders {
         59   -> decodeNibssReference(rawValue)
         62   -> decodeField62(rawValue)
         70   -> decodeNetworkManagementCode(rawValue)
+        120  -> decodePosLocation(rawValue)
         123  -> decodeNibssTerminalCapabilities(rawValue)
         128  -> DecodeResult("${rawValue}  [NIBSS 3DES MAC — message integrity check — 32 bytes]")
         64   -> DecodeResult("${rawValue}  [3DES MAC — 8 bytes]")
@@ -811,6 +812,58 @@ object FieldDecoders {
                 subFields.add(SubField("Tag $tag", value, value))
             }
         }
+
+        return DecodeResult(
+            decodedValue = summary,
+            subFields = subFields
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // DE120 — POS Terminal Location Data (GPS)
+    // -----------------------------------------------------------------------
+
+    fun decodePosLocation(raw: String): DecodeResult {
+        val trimmed = raw.trim()
+        val parts = trimmed.split(",")
+        if (parts.size != 2) {
+            return DecodeResult(
+                decodedValue = "Location: $trimmed",
+                subFields = listOf(SubField("Raw Coordinates", trimmed, trimmed))
+            )
+        }
+
+        val latStr = parts[0].trim()
+        val lonStr = parts[1].trim()
+
+        val isSouth = latStr.startsWith("-")
+        val latClean = latStr.removePrefix("-").removePrefix("+")
+        val latDouble = latClean.toDoubleOrNull()
+        val latHemisphere = if (isSouth) "South (S)" else "North (N)"
+        val latDirection = if (isSouth) "S" else "N"
+
+        val isWest = lonStr.startsWith("-")
+        val lonClean = lonStr.removePrefix("-").removePrefix("+")
+        val lonDouble = lonClean.toDoubleOrNull()
+        val lonHemisphere = if (isWest) "West (W)" else "East (E)"
+        val lonDirection = if (isWest) "W" else "E"
+
+        val latFormatted = if (latDouble != null) "$latClean° $latDirection" else "$latStr°"
+        val lonFormatted = if (lonDouble != null) "$lonClean° $lonDirection" else "$lonStr°"
+
+        val summary = "$latFormatted, $lonFormatted"
+
+        // Numeric coordinates for map queries
+        val numericLat = if (isSouth) "-$latClean" else latClean
+        val numericLon = if (isWest) "-$lonClean" else lonClean
+        val mapsUrl = "https://www.google.com/maps?q=$numericLat,$numericLon"
+
+        val subFields = listOf(
+            SubField("Latitude", latStr, "$latFormatted ($latHemisphere)"),
+            SubField("Longitude", lonStr, "$lonFormatted ($lonHemisphere)"),
+            SubField("Coordinates", "$numericLat, $numericLon", "$latFormatted, $lonFormatted"),
+            SubField("Map Query", mapsUrl, "$numericLat, $numericLon")
+        )
 
         return DecodeResult(
             decodedValue = summary,
