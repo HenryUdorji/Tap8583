@@ -44,6 +44,13 @@ export default function Home() {
   const [messageFilter, setMessageFilter] = useState("ALL");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+  // While paused, the timeline keeps showing (and updating) only the
+  // transactions it had when paused; newer ones are held back and counted.
+  const [pausedIds, setPausedIds] = useState<Set<string> | null>(null);
+
+  // Below the lg breakpoint the timeline and inspector share the screen in turn.
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -173,6 +180,15 @@ export default function Home() {
     };
   }, [serverUrl, apiKey, selectedSerial, connectNonce]);
 
+  // Escape closes the field detail drawer.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedField(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // Selected Transaction Object
   const selectedTransaction = useMemo(() => {
     return transactions.find((t) => t.id === selectedTransactionId) || transactions[0] || null;
@@ -224,6 +240,16 @@ export default function Home() {
       return true;
     });
   }, [transactions, selectedSerial, messageFilter, searchQuery]);
+
+  const visibleTransactions = useMemo(
+    () => (pausedIds ? filteredTransactions.filter((t) => pausedIds.has(t.id)) : filteredTransactions),
+    [filteredTransactions, pausedIds]
+  );
+  const heldCount = filteredTransactions.length - visibleTransactions.length;
+
+  const togglePause = () => {
+    setPausedIds((prev) => (prev ? null : new Set(transactions.map((t) => t.id))));
+  };
 
   // Handler: Inject simulated test transactions
   const handleSimulate = async () => {
@@ -365,29 +391,58 @@ export default function Home() {
         packetCount={filteredTransactions.length}
       />
 
-      {/* 2. Main 3-Panel Content Area */}
+      {/* 2. Main Content Area: timeline · inspector · field detail */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Transaction Timeline (28% width) */}
-        <div className="w-80 md:w-96 flex-shrink-0 h-full">
+        {/* Timeline: full width on small screens until a transaction is opened */}
+        <div
+          className={`${
+            mobileView === "detail" ? "hidden lg:block" : "block"
+          } w-full lg:w-80 xl:w-96 flex-shrink-0 h-full`}
+        >
           <TransactionTimeline
-            transactions={filteredTransactions}
+            transactions={visibleTransactions}
             selectedTransactionId={selectedTransaction?.id || null}
             onSelectTransaction={(tx) => {
               setSelectedTransactionId(tx.id);
               setSelectedField(null);
+              setMobileView("detail");
             }}
+            isPaused={pausedIds !== null}
+            onTogglePause={togglePause}
+            heldCount={heldCount}
           />
         </div>
 
-        {/* Center Panel: Packet Inspector (Flex 1) */}
-        <PacketInspector
-          transaction={selectedTransaction}
-          selectedField={selectedField}
-          onSelectField={(field) => setSelectedField(field)}
-        />
+        {/* Packet Inspector */}
+        <div className={`${mobileView === "list" ? "hidden lg:flex" : "flex"} flex-1 min-w-0 h-full`}>
+          <PacketInspector
+            key={selectedTransaction?.id || "none"}
+            transaction={selectedTransaction}
+            selectedField={selectedField}
+            onSelectField={(field) => setSelectedField(field)}
+            onBack={() => setMobileView("list")}
+          />
+        </div>
 
-        {/* Right Panel: Field Detail Deep-Dive (w-80 / w-96) */}
-        <FieldDetailPanel field={selectedField} />
+        {/* Field detail: a column on wide screens… */}
+        <div className="hidden xl:block w-96 flex-shrink-0 h-full">
+          <FieldDetailPanel field={selectedField} />
+        </div>
+
+        {/* …and a slide-over drawer below that */}
+        {selectedField && (
+          <div className="xl:hidden fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true" aria-label="Field details">
+            <button
+              type="button"
+              aria-label="Close field details"
+              className="absolute inset-0 bg-black/50"
+              onClick={() => setSelectedField(null)}
+            />
+            <div className="relative w-full sm:w-96 h-full shadow-2xl">
+              <FieldDetailPanel field={selectedField} onClose={() => setSelectedField(null)} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 3. Settings Modal */}
