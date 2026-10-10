@@ -5,7 +5,8 @@
 #
 # Caddy terminates HTTPS (automatic Let's Encrypt certificates) and routes
 # /api, /ws and /health to the Ktor server and everything else to the
-# dashboard, so the browser talks to a single origin.
+# dashboard, so the browser talks to a single origin. Postgres keeps
+# accounts, workspaces and transaction history on the postgres_data volume.
 
 services:
   server:
@@ -14,14 +15,40 @@ services:
       context: ..
       dockerfile: serverApp/Dockerfile
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      TAP8583_VIEWER_KEY: ${TAP8583_VIEWER_KEY:?Set TAP8583_VIEWER_KEY in deploy/.env}
-      TAP8583_INGEST_KEY: ${TAP8583_INGEST_KEY:?Set TAP8583_INGEST_KEY in deploy/.env}
-      TAP8583_ALLOWED_ORIGINS: https://${TAP8583_DOMAIN:?Set TAP8583_DOMAIN in deploy/.env}
+      DATABASE_URL: jdbc:postgresql://postgres:5432/tap8583
+      DATABASE_USER: tap8583
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      TAP8583_PUBLIC_URL: https://${TAP8583_DOMAIN:?Set TAP8583_DOMAIN in deploy/.env}
+      TAP8583_ALLOWED_ORIGINS: https://${TAP8583_DOMAIN}
       TAP8583_MASK_CARD_DATA: ${TAP8583_MASK_CARD_DATA:-true}
+      TAP8583_RETENTION_DAYS: ${TAP8583_RETENTION_DAYS:-30}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       JAVA_OPTS: ${SERVER_JAVA_OPTS:--Xmx512m}
     expose:
       - "8080"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tap8583
+      POSTGRES_USER: tap8583
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tap8583 -d tap8583"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   web:
     image: ${WEB_IMAGE:-ghcr.io/henryudorji/tap8583-web:latest}
@@ -50,5 +77,6 @@ services:
       - caddy_config:/config
 
 volumes:
+  postgres_data:
   caddy_data:
   caddy_config:

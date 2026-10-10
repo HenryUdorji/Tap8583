@@ -55,6 +55,8 @@ interface TransactionTimelineProps {
   /** Transactions that arrived while paused and are not shown yet. */
   heldCount: number;
   annotations?: Map<string, TransactionAnnotation>;
+  /** A primary action for the empty state, e.g. "Connect a terminal". */
+  emptyAction?: { label: string; onClick: () => void };
   /** Opens the paste/upload dialog from the empty state. */
   onOpenDecodeLog?: () => void;
   /** Overrides the header title, e.g. for a decoded log. */
@@ -87,6 +89,7 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
   heldCount,
   annotations,
   onOpenDecodeLog,
+  emptyAction,
   title = "Transactions",
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -181,6 +184,15 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
             <div className="text-xs text-slate-500 mt-1 max-w-xs">
               Perform a transaction on your POS terminal, or use &quot;Simulate Txn&quot; in the top bar.
             </div>
+            {emptyAction && (
+              <button
+                type="button"
+                onClick={emptyAction.onClick}
+                className="mt-4 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-on-accent text-xs font-semibold"
+              >
+                {emptyAction.label}
+              </button>
+            )}
             {onOpenDecodeLog && (
               <button
                 type="button"

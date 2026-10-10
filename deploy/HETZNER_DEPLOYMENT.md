@@ -7,14 +7,16 @@ One Hetzner Cloud server runs everything with Docker Compose:
 POS terminals ─┐ │                                                      │
                ├─┼─▶ Caddy :443 ──┬─ /api/*, /ws/*, /health ─▶ server   │
 Browsers ──────┘ │  (auto HTTPS)  └─ everything else ────────▶ web      │
+                 │                    server ──▶ postgres (volume)      │
                  └──────────────────────────────────────────────────────┘
 ```
 
 - **server**: Ktor ingestion + WebSocket backend (`serverApp/Dockerfile`)
 - **web**: Next.js dashboard (`webApp/Dockerfile`)
+- **postgres**: accounts, workspaces, terminal keys and transaction history
 - **caddy**: TLS certificates from Let's Encrypt, reverse proxy, security headers
 
-The dashboard and API share one hostname, so there is no CORS to configure and the API keys never appear in the web bundle.
+The dashboard and API share one hostname, so there is no CORS to configure. People sign in with a link emailed to them; each workspace gets its own terminal keys, so nobody shares a key.
 
 ## 1. Create the server
 
@@ -61,9 +63,11 @@ Fill in `.env`:
 |---|---|
 | `TAP8583_DOMAIN` | The hostname from step 1 |
 | `ACME_EMAIL` | Your email, for Let's Encrypt certificate notices (required) |
-| `TAP8583_VIEWER_KEY` | `openssl rand -hex 24`. People enter this in the dashboard. It can read and clear transactions. |
-| `TAP8583_INGEST_KEY` | `openssl rand -hex 24`, a different value. Goes into POS debug builds. It can only send events. |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 24`. Only the server container uses it. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | SMTP credentials from any email provider (Resend, Postmark, Mailgun, Amazon SES...). Sign-in links and invites are sent this way, so nobody can sign in until it works. |
+| `SMTP_FROM` | The sender, e.g. `Tap8583 <no-reply@yourdomain.com>`, on a domain you've verified with the provider |
 | `TAP8583_MASK_CARD_DATA` | Keep `true`. PAN, track data, expiry and PIN block are masked before anything is stored or shown. |
+| `TAP8583_RETENTION_DAYS` | Days of transaction history to keep (default 30) |
 
 The images are published to GitHub Container Registry. If the packages are private, log the server in once with a GitHub token that has `read:packages`:
 
@@ -75,19 +79,23 @@ Start it:
 
 ```bash
 docker compose up -d
-docker compose logs -f server   # confirm "Card data masking: ON"
+docker compose logs -f server   # confirm "Card data masking: ON" and "Accounts mode: Postgres connected"
 ```
 
-Open `https://<your-domain>`, click the settings icon, and enter the viewer key.
+Open `https://<your-domain>`, enter your email and open the link it sends. The first sign-in walks you through creating a workspace and connecting a terminal.
 
 ## 4. Point terminals at it
 
+In the dashboard, open **Settings → Terminals → New key**. It shows the key once, with the snippet to paste into the POS app's debug build:
+
 ```kotlin
 VisualizerLogListener.install(
-    apiKey = "<TAP8583_INGEST_KEY>",
+    apiKey = "t8k_...",
     endpoint = "https://<your-domain>/api/v1/events"
 )
 ```
+
+Invite teammates from **Settings → People**. They get an email with a link to join the workspace.
 
 ## 5. Automatic deploys from GitHub
 
@@ -102,5 +110,10 @@ Each deploy copies the compose file and Caddyfile, pulls the images tagged with 
 
 - **Logs:** `docker compose logs -f server` (or `web`, `caddy`)
 - **Roll back:** `SERVER_IMAGE=ghcr.io/henryudorji/tap8583-server:<older-sha> WEB_IMAGE=ghcr.io/henryudorji/tap8583-web:<older-sha> docker compose up -d`
-- **Rotate a key:** edit `.env`, then `docker compose up -d server`. Rotating the ingest key means rebuilding the POS debug apps.
-- **Backups:** transactions are held in memory for now, so a restart or deploy clears history. Persistence (Postgres, with nightly backups to a Hetzner Storage Box) is the next step.
+- **Rotate a terminal key:** create a new key in **Settings → Terminals**, ship it in the debug build, then revoke the old one. Revoking takes effect immediately.
+- **Database:** `docker compose exec postgres psql -U tap8583 tap8583`. Data lives on the `postgres_data` volume and survives restarts and deploys. There are no automatic backups; `docker compose down -v` deletes everything.
+- **Email not arriving:** `docker compose logs server | grep -i mail`. Check the provider's dashboard and that `SMTP_FROM` is on a verified domain.
+
+### Without accounts
+
+If `DATABASE_URL` is not set, the server falls back to the original shared keys (`TAP8583_VIEWER_KEY` for the dashboard, `TAP8583_INGEST_KEY` for terminals) and keeps history in memory only. That is handy for running it locally; the compose file above always uses accounts.
