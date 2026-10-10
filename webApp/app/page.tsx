@@ -347,7 +347,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[#090D16] text-slate-100 font-sans">
+    <div className="flex flex-col h-screen overflow-hidden bg-app text-slate-100 font-sans">
       {/* 1. Fixed Top Toolbar */}
       <TopBar
         connectionState={connectionState}

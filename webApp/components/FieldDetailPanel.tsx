@@ -26,7 +26,7 @@ export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field }) => 
 
   if (!field) {
     return (
-      <div className="w-80 lg:w-96 flex flex-col items-center justify-center bg-[#0B101D] p-6 text-center text-slate-500 select-none">
+      <div className="w-80 lg:w-96 flex flex-col items-center justify-center bg-panel p-6 text-center text-slate-500 select-none">
         <Info className="w-8 h-8 text-slate-700 mb-2" />
         <div className="text-xs font-semibold text-slate-400">Field Deep Dive</div>
         <div className="text-[11px] text-slate-500 mt-1">
@@ -46,7 +46,7 @@ export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field }) => 
         .join(" ");
 
   return (
-    <div className="w-80 lg:w-96 flex flex-col h-full bg-[#0B101D] border-l border-white/10 overflow-y-auto select-text font-mono text-xs">
+    <div className="w-80 lg:w-96 flex flex-col h-full bg-panel border-l border-white/10 overflow-y-auto select-text font-mono text-xs">
       {/* Panel Header */}
       <div className="px-4 py-3 bg-slate-900/90 border-b border-white/10 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-2">

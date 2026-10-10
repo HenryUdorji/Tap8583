@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { DeviceSummaryDto } from "@/lib/types";
 import { ConnectionState } from "@/lib/connection";
+import { ThemeToggle } from "./ThemeToggle";
 
 const CONNECTION_LABELS: Record<ConnectionState, string> = {
   LIVE: "LIVE",
@@ -60,12 +61,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   const isConnected = connectionState === "LIVE";
 
   return (
-    <header className="h-14 border-b border-white/10 bg-[#0F172A]/90 backdrop-blur-md px-4 flex items-center justify-between gap-4 select-none z-20">
+    <header className="h-14 border-b border-white/10 bg-raised/90 backdrop-blur-md px-4 flex items-center justify-between gap-4 select-none z-20">
       {/* Left Branding & Device Selector */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 pr-3 border-r border-white/10">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
-            <CreditCard className="w-4 h-4 text-white" />
+            <CreditCard className="w-4 h-4 text-on-accent" />
           </div>
           <div>
             <div className="flex items-center gap-1.5 font-bold tracking-tight text-white text-sm">
@@ -170,6 +171,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           <Download className="w-3.5 h-3.5" />
         </button>
+
+        <ThemeToggle />
 
         {/* Settings Button */}
         <button
