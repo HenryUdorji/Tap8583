@@ -135,7 +135,10 @@ data class DecodeLogResponse(
 @Serializable
 data class WsAuthMessage(
     val type: String,
+    /** Shared-key mode: the viewer key. */
     val apiKey: String? = null,
+    /** Accounts mode: the workspace to watch (the session cookie identifies the person). */
+    val workspace: String? = null,
     val serial: String? = null
 )
 
@@ -224,3 +227,65 @@ fun TLVEntry.toDto(): TlvEntryDto {
         isConstructed = isConstructed
     )
 }
+
+// ---------------------------------------------------------------------------
+// Accounts and workspaces
+// ---------------------------------------------------------------------------
+
+/** Tells the dashboard how to sign in: "accounts" (sign-in + workspaces) or "key" (shared viewer key). */
+@Serializable
+data class AuthConfigDto(
+    val mode: String,
+    /** False when accounts mode has no way to send email yet (SMTP not set up). */
+    val emailSignIn: Boolean
+)
+
+@Serializable
+data class UserDto(val id: String, val email: String, val name: String? = null, val avatarUrl: String? = null)
+
+@Serializable
+data class WorkspaceDto(val id: String, val name: String, val role: String)
+
+@Serializable
+data class MeDto(val user: UserDto, val workspaces: List<WorkspaceDto>)
+
+@Serializable
+data class MemberDto(
+    val userId: String,
+    val email: String,
+    val name: String? = null,
+    val avatarUrl: String? = null,
+    val role: String,
+    val joinedAt: String
+)
+
+@Serializable
+data class InviteDto(val id: String, val email: String, val createdAt: String, val expiresAt: String)
+
+@Serializable
+data class MembersDto(val members: List<MemberDto>, val invites: List<InviteDto>, val canEmail: Boolean)
+
+@Serializable
+data class CreatedInviteDto(val invite: InviteDto, val link: String, val emailed: Boolean)
+
+@Serializable
+data class InviteDetailsDto(val workspaceName: String, val email: String)
+
+@Serializable
+data class IngestKeyDto(
+    val id: String,
+    val name: String,
+    val prefix: String,
+    val createdAt: String,
+    val lastUsedAt: String? = null,
+    val revokedAt: String? = null
+)
+
+/** The raw key is returned only here, once. */
+@Serializable
+data class CreatedIngestKeyDto(val key: IngestKeyDto, val value: String)
+
+@Serializable data class NameRequest(val name: String)
+@Serializable data class EmailRequest(val email: String, val next: String? = null)
+@Serializable data class TokenRequest(val token: String)
+@Serializable data class ErrorDto(val error: String)

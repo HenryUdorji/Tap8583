@@ -23,7 +23,8 @@ It features a high-performance **Kotlin / Ktor Ingestion Server** and a sleek **
 * **🔌 Channel Errors Next to the Transaction**: Read timeouts, host disconnects and failed connects reported by jPOS show on the transaction they affected.
 * **↩️ Reversal Linking**: 0420/0400 reversals link to the transaction they reverse (via DE90 or the STAN), in both directions.
 * **📊 Stats & Alerts**: Approval rate, average and p95 round trip, and pop-up alerts for timeouts, host errors, slow responses and integration-type declines.
-* **🔒 Key-Protected Access & Server-Side Masking**: Terminals send with a write-only ingest key; the dashboard needs a separate viewer key. PAN, Track 2, expiry, PIN block and the card data inside DE55 are masked on the server before anything is stored or shown.
+* **👥 Accounts & Workspaces**: Sign in with an emailed link, create a workspace, invite your team, and give each POS app its own revocable terminal key. Transaction history is kept in Postgres.
+* **🔒 Server-Side Masking**: PAN, Track 2, expiry, PIN block and the card data inside DE55 are masked on the server before anything is stored or shown.
 
 ---
 
@@ -57,8 +58,15 @@ The output JAR will be generated at:
 `listenerLib/build/libs/tap8583-listener-1.0.0-SNAPSHOT.jar`
 
 ### 2. Run the Ingestion Server (`serverApp`)
+
+The server has two modes. With `DATABASE_URL` set it runs with accounts: people sign in with an emailed link and each workspace has its own terminal keys. Without it, it falls back to one shared viewer key and one ingest key, with history in memory.
+
 ```bash
-# Run locally (if no key is set, a temporary viewer key is generated and logged)
+# Accounts mode against a local Postgres; sign-in links are printed to the log instead of emailed
+DATABASE_URL=jdbc:postgresql://localhost:5432/tap8583 DATABASE_USER=postgres DATABASE_PASSWORD=postgres \
+TAP8583_LOG_EMAIL_LINKS=true TAP8583_APP_URL=http://localhost:3000 ./gradlew :serverApp:run
+
+# Shared-key mode (if no key is set, a temporary viewer key is generated and logged)
 TAP8583_VIEWER_KEY=dev-viewer TAP8583_INGEST_KEY=dev-ingest ./gradlew :serverApp:run
 
 # Or run with Docker
@@ -68,8 +76,14 @@ docker run -p 8080:8080 -e TAP8583_VIEWER_KEY=dev-viewer -e TAP8583_INGEST_KEY=d
 
 | Variable | Purpose |
 |---|---|
-| `TAP8583_VIEWER_KEY` | Dashboard key: read, clear and simulate. |
-| `TAP8583_INGEST_KEY` | Terminal key: can only POST events. Defaults to the viewer key. |
+| `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` | Postgres connection. Turns on accounts mode; the schema is migrated on startup. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Outgoing email for sign-in links and invites (accounts mode). |
+| `TAP8583_LOG_EMAIL_LINKS` | `true` logs sign-in and invite links instead of emailing them. Local development only. |
+| `TAP8583_PUBLIC_URL` | The server's public URL. `https` turns on secure cookies. |
+| `TAP8583_APP_URL` | Where the dashboard lives, for links in emails. Defaults to the public URL. |
+| `TAP8583_RETENTION_DAYS` | Days of transaction history to keep (default 30). |
+| `TAP8583_VIEWER_KEY` | Shared-key mode: dashboard key for read, clear and simulate. |
+| `TAP8583_INGEST_KEY` | Shared-key mode: terminal key that can only POST events. Defaults to the viewer key. |
 | `TAP8583_API_KEY` | Legacy single key, used for both when the two above are unset. |
 | `TAP8583_ALLOWED_ORIGINS` | Comma-separated browser origins allowed by CORS. Defaults to `http://localhost:3000`. |
 | `TAP8583_MASK_CARD_DATA` | `true` (default) masks card data server-side. |
@@ -80,7 +94,7 @@ cd webApp
 npm install
 NEXT_PUBLIC_SERVER_URL=http://localhost:8080 npm run dev
 ```
-Open `http://localhost:3000`, click the settings icon and enter the viewer key.
+Open `http://localhost:3000`. In accounts mode, enter your email and open the link from the server log; in shared-key mode, enter the viewer key.
 
 ### 4. Deploy to Hetzner
 See [`deploy/HETZNER_DEPLOYMENT.md`](deploy/HETZNER_DEPLOYMENT.md): one server running the backend, the dashboard and Caddy (automatic HTTPS) with Docker Compose, deployed from GitHub Actions.
@@ -92,6 +106,11 @@ See [`deploy/HETZNER_DEPLOYMENT.md`](deploy/HETZNER_DEPLOYMENT.md): one server r
 To run the shared JUnit test suite validating ISO 8583 parsing and semantic decoding:
 ```bash
 ./gradlew :shared:jvmTest
+```
+
+Server tests. The accounts tests need an empty Postgres database and are skipped without one:
+```bash
+TAP8583_TEST_DATABASE_URL="jdbc:postgresql://localhost:5432/tap8583_test?user=postgres" ./gradlew :serverApp:test
 ```
 
 ---

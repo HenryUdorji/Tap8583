@@ -38,6 +38,8 @@ interface TopBarProps {
   onOpenSettings: () => void;
   onExport: () => void;
   onOpenDecodeLog: () => void;
+  /** Rendered after the logo, e.g. the workspace switcher. */
+  extra?: React.ReactNode;
   packetCount: number;
 }
 
@@ -64,6 +66,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenSettings,
   onExport,
   onOpenDecodeLog,
+  extra,
   packetCount,
 }) => {
   const isConnected = connectionState === "LIVE";
@@ -77,10 +80,13 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
         <div className="hidden min-[400px]:flex items-center gap-1.5 font-bold tracking-tight text-white text-sm">
           Tap8583
-          <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 font-mono font-medium">
-            v2.0 Cloud
-          </span>
+          {!extra && (
+            <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 font-mono font-medium">
+              v2.0 Cloud
+            </span>
+          )}
         </div>
+        {extra}
       </div>
 
       {/* Device, message filter and search: a second row below lg */}
