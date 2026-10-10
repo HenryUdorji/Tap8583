@@ -1,21 +1,21 @@
 # Tap8583 Android Client (`listenerLib`) — Integration Guide
 
-`visualizer-log-listener-1.0.0.jar` is a lightweight, zero-configuration jPOS logger that streams live ISO 8583 transaction events directly to the **Tap8583 Cloud Visualizer** over HTTPS.
+`dev.sarari:tap8583-listener` is a lightweight jPOS logger that streams live ISO 8583 transaction events directly to the **Tap8583 Cloud Visualizer** over HTTPS.
 
 ---
 
 ## 🚀 1 — Add the Dependency to your Android Project
 
-### Option A: Gradle Dependency (via JAR)
-Copy `listenerLib/build/libs/visualizer-log-listener-1.0.0.jar` into your Android project's `app/libs/` directory.
+The library is on Maven Central. In `app/build.gradle.kts`:
 
-In `app/build.gradle`:
-```groovy
+```kotlin
 dependencies {
-    // Recommended: Use debugImplementation so visualizer code never ships to production
-    debugImplementation files('libs/visualizer-log-listener-1.0.0.jar')
+    // debugImplementation keeps the listener out of release builds
+    debugImplementation("dev.sarari:tap8583-listener:1.0.0")
 }
 ```
+
+It expects jPOS and the Kotlin standard library to be on the app's classpath already (both are `compileOnly`), and brings in OkHttp.
 
 ---
 
@@ -26,15 +26,16 @@ You do **not** need to find local IP addresses, run ADB port forwards, or modify
 In your `Application.onCreate()`:
 
 ```kotlin
-import com.tap8583.visualizer.VisualizerLogListener
+import dev.sarari.tap8583.listener.VisualizerLogListener
 
 class PosApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // One-line setup — auto-detects hardware serial and connects to cloud visualizer
+        // Auto-detects the hardware serial and streams events to your Tap8583 server
         VisualizerLogListener.install(
-            apiKey = "tap_live_YOUR_WORKSPACE_KEY"
+            apiKey = "YOUR_INGEST_KEY",
+            endpoint = "https://your-domain/api/v1/events"
         )
     }
 }
@@ -75,3 +76,15 @@ VisualizerLogListener.install(
     deviceSerial = "CUSTOM-SERIAL-TAG" // Optional custom tag
 )
 ```
+
+---
+
+## 📦 6 — Publishing a new version (maintainers)
+
+Push a tag named `listener-v<version>`:
+
+```bash
+git tag listener-v1.0.1 && git push origin listener-v1.0.1
+```
+
+`.github/workflows/publish-listener.yml` builds, signs and releases `dev.sarari:tap8583-listener:<version>` to Maven Central. The secrets it needs are listed at the top of that workflow. To try the artifacts locally first, run `./gradlew :listenerLib:publishToMavenLocal -PlistenerVersion=1.0.1`.

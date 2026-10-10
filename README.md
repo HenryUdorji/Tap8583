@@ -40,13 +40,17 @@ Tap8583/
 
 ## 🛠️ How to Build & Run
 
-### 1. Build the Client Log Listener (`listenerLib`)
-To compile the `listenerLib` JAR for your Android / POS projects:
+### 1. Use or Build the Client Log Listener (`listenerLib`)
+POS apps add it from Maven Central:
+```kotlin
+debugImplementation("dev.sarari:tap8583-listener:1.0.0")
+```
+See [`listenerLib/INTEGRATION.md`](listenerLib/INTEGRATION.md) for setup and for publishing new versions. To build the JAR yourself:
 ```bash
 ./gradlew :listenerLib:assemble
 ```
 The output JAR will be generated at:
-`listenerLib/build/libs/visualizer-log-listener-1.0.0.jar`
+`listenerLib/build/libs/tap8583-listener-1.0.0-SNAPSHOT.jar`
 
 ### 2. Run the Ingestion Server (`serverApp`)
 ```bash

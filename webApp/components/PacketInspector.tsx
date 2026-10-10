@@ -41,7 +41,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
 
   if (!transaction) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#090E1B] p-8 text-center text-slate-500 select-none">
+      <div className="flex-1 flex flex-col items-center justify-center bg-app p-8 text-center text-slate-500 select-none">
         <Radio className="w-10 h-10 text-slate-700 mb-3" />
         <div className="text-base font-semibold text-slate-400">No Transaction Selected</div>
         <div className="text-xs text-slate-500 mt-1 max-w-sm">
@@ -77,7 +77,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
   const mti = currentPacket?.mti;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#090E1B] overflow-hidden select-none border-r border-white/10">
+    <div className="flex-1 flex flex-col h-full bg-app overflow-hidden select-none border-r border-white/10">
       {/* Top Packet Header Strip */}
       <div className="px-4 py-2.5 bg-slate-900/90 border-b border-white/10 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -169,7 +169,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
           <div className="p-4 space-y-4">
             {/* 1. MTI Interactive Card */}
             {mti && (
-              <div className="bg-[#11192E]/80 border border-white/10 rounded-xl p-4 shadow-lg shadow-black/20">
+              <div className="bg-card/80 border border-white/10 rounded-xl p-4 shadow-lg shadow-black/20">
                 <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
                   <span>Message Type Indicator (MTI: DE0)</span>
                   <span className="text-sky-400 font-mono font-medium">{mti.label}</span>
@@ -211,7 +211,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
                 return (
                   <div
                     key={category}
-                    className="border border-white/10 rounded-xl overflow-hidden bg-[#11192E]/40"
+                    className="border border-white/10 rounded-xl overflow-hidden bg-card/40"
                   >
                     {/* Category Header */}
                     <div

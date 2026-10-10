@@ -100,7 +100,7 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0B101D] border-r border-white/10 relative select-none">
+    <div className="flex flex-col h-full bg-panel border-r border-white/10 relative select-none">
       {/* Panel Header */}
       <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
         <div className="flex items-center gap-2">
@@ -154,7 +154,7 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
                 className={`group relative rounded-xl border p-3 cursor-pointer transition-all duration-200 ${
                   isSelected
                     ? "bg-slate-800/90 border-sky-500/80 shadow-lg shadow-sky-500/10 ring-1 ring-sky-500/50"
-                    : "bg-[#11192E]/70 hover:bg-slate-800/60 border-white/10 hover:border-white/20"
+                    : "bg-card/70 hover:bg-slate-800/60 border-white/10 hover:border-white/20"
                 }`}
               >
                 {/* Left accent border */}

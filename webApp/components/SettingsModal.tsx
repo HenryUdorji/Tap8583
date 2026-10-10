@@ -43,7 +43,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="bg-[#0F172A] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-raised border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -71,7 +71,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               autoComplete="off"
               value={localKey}
               onChange={(e) => setLocalKey(e.target.value)}
-              placeholder="tap_live_..."
+              placeholder="Paste your viewer key"
               className="w-full bg-slate-900 border border-white/10 focus:border-sky-500/60 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 outline-none transition-all"
             />
             <p className="text-[11px] text-slate-500">

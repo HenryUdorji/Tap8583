@@ -43,7 +43,7 @@ export const RawXmlViewer: React.FC<RawXmlViewerProps> = ({ xml }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#080D1A] overflow-hidden relative select-text">
+    <div className="flex flex-col h-full bg-code overflow-hidden relative select-text">
       {/* Top Bar with Copy controls */}
       <div className="flex items-center justify-between px-4 py-2 bg-slate-900/80 border-b border-white/10 text-xs font-mono">
         <span className="text-slate-400">jPOS Visualizer XML Stream</span>
