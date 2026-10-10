@@ -26,12 +26,14 @@ import java.time.Instant
 class TransactionMatcher(
     private val scope: CoroutineScope,
     val matchWindowMs: Long = DEFAULT_MATCH_WINDOW_MS,
-    private val timeoutScanIntervalMs: Long = DEFAULT_SCAN_INTERVAL_MS
+    private val timeoutScanIntervalMs: Long = DEFAULT_SCAN_INTERVAL_MS,
+    private val maxRetained: Int = DEFAULT_MAX_RETAINED
 ) {
 
     companion object {
         const val DEFAULT_MATCH_WINDOW_MS = 60_000L   // 60 seconds
         const val DEFAULT_SCAN_INTERVAL_MS = 2_000L    // scan every 2 seconds
+        const val DEFAULT_MAX_RETAINED = 1_000         // oldest transactions are dropped beyond this
     }
 
     // -----------------------------------------------------------------------
@@ -85,10 +87,12 @@ class TransactionMatcher(
     suspend fun ingest(event: RawLogEvent): Transaction {
         val stan = event.fields[11]?.value
         return synchronized(lock) {
-            when (event.direction) {
+            val tx = when (event.direction) {
                 Direction.OUTGOING -> handleOutgoing(event, stan)
                 Direction.INCOMING -> handleIncoming(event, stan)
             }
+            trimToCapacity()
+            tx
         }.also { tx ->
             _transactions.value = synchronized(lock) { allTransactions.toList() }
             _events.emit(TransactionEvent.Updated(tx))
@@ -156,6 +160,16 @@ class TransactionMatcher(
         return orphan
     }
 
+    /** Drops the oldest transactions (and their pending entries) beyond [maxRetained]. */
+    private fun trimToCapacity() {
+        val excess = allTransactions.size - maxRetained
+        if (excess <= 0) return
+        val dropped = allTransactions.subList(0, excess)
+        val droppedIds = dropped.mapTo(HashSet()) { it.id }
+        dropped.clear()
+        pendingByStan.values.removeIf { it.id in droppedIds }
+    }
+
     private fun resolveStatus(responseCode: String?): TransactionStatus {
         if (responseCode == null) return TransactionStatus.PENDING
         return when (responseCode.trim()) {
@@ -199,12 +213,22 @@ class TransactionMatcher(
     // Public helpers
     // -----------------------------------------------------------------------
 
-    fun clear() {
-        synchronized(lock) {
-            allTransactions.clear()
-            pendingByStan.clear()
+    /**
+     * Clears transactions for one device [serial], or for all devices when
+     * [serial] is null or blank.
+     */
+    fun clear(serial: String? = null) {
+        val remaining = synchronized(lock) {
+            if (serial.isNullOrBlank()) {
+                allTransactions.clear()
+                pendingByStan.clear()
+            } else {
+                allTransactions.removeIf { it.serial == serial }
+                pendingByStan.values.removeIf { it.serial == serial }
+            }
+            allTransactions.toList()
         }
-        _transactions.value = emptyList()
+        _transactions.value = remaining
     }
 }
 

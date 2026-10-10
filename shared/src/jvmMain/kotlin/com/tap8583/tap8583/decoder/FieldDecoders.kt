@@ -70,7 +70,11 @@ object FieldDecoders {
 
     fun decodePan(pan: String): DecodeResult {
         val scheme = detectCardScheme(pan)
-        val luhn   = if (luhnCheck(pan)) "✓" else "✗ FAIL"
+        val luhn   = when {
+            pan.contains('*') -> "n/a (masked)"
+            luhnCheck(pan)    -> "✓"
+            else              -> "✗ FAIL"
+        }
         val masked = maskPan(pan)
         return DecodeResult(
             decodedValue = "$scheme  ·  ${pan.length} digits  ·  Luhn: $luhn",
@@ -272,6 +276,7 @@ object FieldDecoders {
     // -----------------------------------------------------------------------
 
     fun decodeExpiryDate(raw: String): DecodeResult {
+        if (raw.contains('*')) return DecodeResult("Masked")
         if (raw.length != 4) return DecodeResult("Invalid expiry (expected YYMM)")
         val year  = "20${raw.substring(0, 2)}"
         val month = raw.substring(2, 4)
@@ -428,7 +433,9 @@ object FieldDecoders {
         val discretionary = rest.drop(7)
 
         val maskedPan = maskPan(pan)
-        val expiryDec = if (expiry.length == 4) {
+        val expiryDec = if (expiry.contains('*')) {
+            "Masked"
+        } else if (expiry.length == 4) {
             "${monthName(expiry.substring(2, 4))} 20${expiry.substring(0, 2)}"
         } else expiry
 

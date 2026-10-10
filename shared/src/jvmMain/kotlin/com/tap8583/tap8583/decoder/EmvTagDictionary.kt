@@ -215,8 +215,9 @@ object EmvTagDictionary {
     }
 
     private fun decodeTrack2Equivalent(hex: String): String {
-        val ascii = hex.chunked(2).mapNotNull { it.toIntOrNull(16)?.toChar() }.joinToString("")
-        return "Track 2: $ascii"
+        // Track 2 Equivalent Data is BCD-packed: the hex digits are the track
+        // characters, with 'D' as the PAN/expiry separator and 'F' as padding.
+        return "Track 2: ${hex.uppercase()}"
     }
 
     private fun decodeYYMMDD(hex: String): String {

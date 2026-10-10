@@ -23,12 +23,23 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
+
+/** Largest ingest payload accepted from a terminal (one or a few jPOS events). */
+private const val MAX_INGEST_BYTES = 512 * 1024
+
+/** How long a WebSocket client has to send its AUTH frame after connecting. */
+private const val WS_AUTH_TIMEOUT_MS = 10_000L
+
+/** WebSocket close code sent when the AUTH frame is missing or the key is wrong. */
+private const val WS_CLOSE_UNAUTHORIZED: Short = 4401
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
@@ -36,9 +47,74 @@ fun main() {
     embeddedServer(CIO, port = port, host = host, module = Application::module).start(wait = true)
 }
 
+/**
+ * Server configuration, read from the environment.
+ *
+ * Two keys:
+ *  - viewer key: full access (dashboard read, clear, and ingest for "Simulate")
+ *  - ingest key: write-only, embedded in POS app builds — can POST events, cannot read them
+ *
+ * `TAP8583_API_KEY` is still honoured as the fallback for both.
+ */
+private class ServerConfig(
+    val viewerKey: String,
+    val ingestKey: String,
+    val maskCardData: Boolean,
+    val allowedOrigins: List<String>
+) {
+    companion object {
+        fun fromEnv(log: org.slf4j.Logger): ServerConfig {
+            fun env(name: String) = System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }
+
+            val legacyKey = env("TAP8583_API_KEY")
+            val viewerKey = env("TAP8583_VIEWER_KEY") ?: legacyKey ?: generateKey().also {
+                log.warn("TAP8583_VIEWER_KEY is not set. Generated a temporary key for this run: {}", it)
+            }
+            val ingestKey = env("TAP8583_INGEST_KEY") ?: legacyKey ?: viewerKey
+
+            val allowedOrigins = (env("TAP8583_ALLOWED_ORIGINS") ?: "http://localhost:3000")
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+            return ServerConfig(
+                viewerKey = viewerKey,
+                ingestKey = ingestKey,
+                maskCardData = env("TAP8583_MASK_CARD_DATA")?.lowercase() != "false",
+                allowedOrigins = allowedOrigins
+            )
+        }
+
+        private fun generateKey(): String {
+            val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
+            return "tap_" + bytes.joinToString("") { "%02x".format(it) }
+        }
+    }
+}
+
+/** Constant-time key comparison. */
+private fun keyMatches(provided: String?, expected: String): Boolean {
+    if (provided.isNullOrEmpty()) return false
+    return MessageDigest.isEqual(provided.toByteArray(), expected.toByteArray())
+}
+
+private fun ApplicationCall.providedKey(): String? =
+    request.headers["x-api-key"]
+        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()
+
+/** Responds 401 and returns false unless the request carries one of [allowed]. */
+private suspend fun ApplicationCall.requireKey(vararg allowed: String): Boolean {
+    val key = providedKey()
+    if (allowed.any { keyMatches(key, it) }) return true
+    respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid or missing API key"))
+    return false
+}
+
 fun Application.module() {
     val log = LoggerFactory.getLogger("Tap8583Server")
-    val configuredApiKey = System.getenv("TAP8583_API_KEY") ?: "tap_live_secret"
+    val config = ServerConfig.fromEnv(log)
+    log.info(
+        "Card data masking: {}. Allowed browser origins: {}",
+        if (config.maskCardData) "ON" else "OFF", config.allowedOrigins
+    )
 
     val jsonConfig = Json {
         prettyPrint = false
@@ -54,51 +130,48 @@ fun Application.module() {
     val matcher = TransactionMatcher(scope = appScope)
     val store = TransactionStore(maxPerDevice = 50, ttlDays = 7)
 
-    // WebSocket Subscriber Registry
+    // WebSocket Subscriber Registry (authenticated clients only)
     data class ClientSession(
         val session: DefaultWebSocketSession,
-        val apiKey: String?,
         val filterSerial: String?
     )
     val wsClients = CopyOnWriteArraySet<ClientSession>()
 
-    // Broadcast helper
-    fun broadcast(msg: WebSocketMessage) {
+    // Broadcast helper. Sends sequentially so clients see updates in order
+    // (e.g. PENDING before APPROVED for the same transaction).
+    suspend fun broadcast(msg: WebSocketMessage) {
         val jsonText = jsonConfig.encodeToString(msg)
-        appScope.launch {
-            wsClients.forEach { client ->
-                try {
-                    // Check if message is relevant for this client
-                    if (msg.transaction != null) {
-                        val clientSerial = client.filterSerial
-                        val txSerial = msg.transaction.serial
-                        if (clientSerial.isNullOrBlank() || clientSerial.equals("ALL", ignoreCase = true) || clientSerial == txSerial) {
-                            client.session.send(Frame.Text(jsonText))
-                        }
-                    } else {
-                        client.session.send(Frame.Text(jsonText))
-                    }
-                } catch (e: Exception) {
-                    log.debug("Error sending frame to WebSocket client: ${e.message}")
-                }
+        wsClients.forEach { client ->
+            try {
+                val clientSerial = client.filterSerial
+                val txSerial = msg.transaction?.serial
+                val relevant = msg.transaction == null ||
+                    clientSerial.isNullOrBlank() ||
+                    clientSerial.equals("ALL", ignoreCase = true) ||
+                    clientSerial == txSerial
+                if (relevant) client.session.send(Frame.Text(jsonText))
+            } catch (e: Exception) {
+                log.debug("Error sending frame to WebSocket client: ${e.message}")
             }
         }
     }
 
-    // Connect matcher transaction updates to decoding & storage
-    matcher.transactions
-        .onEach { txList ->
-            val latest = txList.lastOrNull() ?: return@onEach
-            val decodedReq = latest.request?.let { SemanticDecoder.decode(it) }
-            val decodedResp = latest.response?.let { SemanticDecoder.decode(it) }
+    // Decode, store and broadcast exactly the transaction that changed —
+    // including matches against older requests and timeouts.
+    matcher.events
+        .onEach { event ->
+            val tx = when (event) {
+                is TransactionEvent.Updated -> event.transaction
+                is TransactionEvent.Timeout -> event.transaction
+            }
             val decodedTx = DecodedTransaction(
-                id = latest.id,
-                stan = latest.stan,
-                request = decodedReq,
-                response = decodedResp,
-                status = latest.status,
-                rttMs = latest.rttMs,
-                serial = latest.serial
+                id = tx.id,
+                stan = tx.stan,
+                request = tx.request?.let { SemanticDecoder.decode(it) },
+                response = tx.response?.let { SemanticDecoder.decode(it) },
+                status = tx.status,
+                rttMs = tx.rttMs,
+                serial = tx.serial
             )
             store.saveOrUpdate(decodedTx)
             broadcast(WebSocketMessage(type = "TRANSACTION_UPDATED", transaction = decodedTx.toDto()))
@@ -117,7 +190,13 @@ fun Application.module() {
     // Plugins
     // -----------------------------------------------------------------------
     install(CORS) {
-        anyHost()
+        // Terminals are not browsers, so CORS only matters for the dashboard.
+        // Behind the Caddy reverse proxy the dashboard is same-origin and needs none.
+        config.allowedOrigins.forEach { origin ->
+            val uri = java.net.URI(origin)
+            val hostWithPort = if (uri.port > 0) "${uri.host}:${uri.port}" else uri.host
+            allowHost(hostWithPort, schemes = listOf(uri.scheme))
+        }
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Authorization)
         allowHeader("x-api-key")
@@ -135,7 +214,7 @@ fun Application.module() {
     install(WebSockets) {
         pingPeriod = Duration.ofSeconds(15)
         timeout = Duration.ofSeconds(30)
-        maxFrameSize = Long.MAX_VALUE
+        maxFrameSize = 64 * 1024L
         masking = false
     }
 
@@ -143,7 +222,7 @@ fun Application.module() {
     install(StatusPages) {
         exception<Throwable> { call, cause ->
             log.error("Unhandled error processing request: ${cause.message}", cause)
-            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (cause.message ?: "Internal Error")))
+            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Internal Error"))
         }
     }
 
@@ -155,19 +234,23 @@ fun Application.module() {
             call.respond(mapOf("status" to "healthy", "service" to "Tap8583 Cloud Ingestion", "version" to "2.0.0"))
         }
 
-        // --- HTTP Ingest from Android POS listenerLib ---
+        // --- HTTP Ingest from Android POS listenerLib (and the dashboard's Simulate button) ---
         post("/api/v1/events") {
-            val reqApiKey = call.request.headers["x-api-key"]
-                ?: call.request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()
+            if (!call.requireKey(config.ingestKey, config.viewerKey)) return@post
 
-            if (configuredApiKey.isNotBlank() && reqApiKey != configuredApiKey && reqApiKey != "tap_live_secret") {
-                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid or missing API key"))
+            val declaredLength = call.request.contentLength()
+            if (declaredLength != null && declaredLength > MAX_INGEST_BYTES) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Payload too large"))
                 return@post
             }
 
             val headerSerial = call.request.headers["x-device-serial"]
             val rawBody = call.receiveText()
 
+            if (rawBody.length > MAX_INGEST_BYTES) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Payload too large"))
+                return@post
+            }
             if (rawBody.isBlank()) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Empty XML body"))
                 return@post
@@ -176,24 +259,21 @@ fun Application.module() {
             try {
                 // Split multi-event payloads if delimiter is present
                 val xmlChunks = rawBody.split("---END---").map { it.trim() }.filter { it.isNotBlank() }
-                val parsedEvents = mutableListOf<RawLogEvent>()
+                var ingested = 0
 
                 for (chunk in xmlChunks) {
                     val event = JposXmlParser.parse(chunk)
-                    val effectiveEvent = if (event.serial.isNullOrBlank() && !headerSerial.isNullOrBlank()) {
+                    val withSerial = if (event.serial.isNullOrBlank() && !headerSerial.isNullOrBlank()) {
                         event.copy(serial = headerSerial.trim())
                     } else {
                         event
                     }
-                    parsedEvents.add(effectiveEvent)
-                    matcher.ingest(effectiveEvent)
+                    val safeEvent = if (config.maskCardData) CardDataMasker.mask(withSerial) else withSerial
+                    matcher.ingest(safeEvent)
+                    ingested++
                 }
 
-                call.respond(HttpStatusCode.OK, mapOf(
-                    "status" to "ok",
-                    "eventsIngested" to parsedEvents.size,
-                    "devicesSeen" to store.getDevices().size
-                ))
+                call.respond(HttpStatusCode.OK, IngestResponse(status = "ok", eventsIngested = ingested))
             } catch (e: Exception) {
                 log.warn("XML Parse / Ingestion error: ${e.message}")
                 call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to (e.message ?: "Parse error")))
@@ -202,55 +282,62 @@ fun Application.module() {
 
         // --- Device List API ---
         get("/api/v1/devices") {
-            val devices = store.getDevices()
-            call.respond(devices)
+            if (!call.requireKey(config.viewerKey)) return@get
+            call.respond(store.getDevices())
         }
 
         // --- Transaction History REST API ---
         get("/api/v1/transactions") {
+            if (!call.requireKey(config.viewerKey)) return@get
             val serial = call.request.queryParameters["serial"]
-            val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 50
-            val list = store.getTransactions(serial, limit).map { it.toDto() }
-            call.respond(list)
+            val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 50).coerceIn(1, 200)
+            call.respond(store.getTransactions(serial, limit).map { it.toDto() })
         }
 
         // --- Clear Transactions API ---
         post("/api/v1/clear") {
+            if (!call.requireKey(config.viewerKey)) return@post
             val serial = call.request.queryParameters["serial"]
-            matcher.clear()
+                ?.takeUnless { it.isBlank() || it.equals("ALL", ignoreCase = true) }
+            matcher.clear(serial)
             store.clear(serial)
-            broadcast(WebSocketMessage(type = "CLEAR"))
+            broadcast(WebSocketMessage(type = "CLEAR", serial = serial))
             call.respond(mapOf("status" to "cleared"))
         }
 
-        // --- Real-time WebSocket Stream for Next.js Web App ---
+        // --- Real-time WebSocket Stream for the web dashboard ---
+        // The client authenticates with its first frame:
+        //   {"type":"AUTH","apiKey":"…","serial":"ALL"}
+        // so the key never appears in URLs or access logs.
         webSocket("/ws/stream") {
-            val clientApiKey = call.request.queryParameters["apiKey"]
-            val clientSerial = call.request.queryParameters["serial"]
+            val auth = withTimeoutOrNull(WS_AUTH_TIMEOUT_MS) {
+                val frame = incoming.receive()
+                (frame as? Frame.Text)?.readText()?.let {
+                    runCatching { jsonConfig.decodeFromString<WsAuthMessage>(it) }.getOrNull()
+                }
+            }
 
-            val client = ClientSession(this, clientApiKey, clientSerial)
+            if (auth == null || auth.type != "AUTH" || !keyMatches(auth.apiKey, config.viewerKey)) {
+                close(CloseReason(WS_CLOSE_UNAUTHORIZED, "Unauthorized"))
+                return@webSocket
+            }
+
+            val clientSerial = auth.serial?.takeUnless { it.isBlank() || it.equals("ALL", ignoreCase = true) }
+            val client = ClientSession(this, clientSerial)
             wsClients.add(client)
             log.info("✓ WebSocket client connected [filter: ${clientSerial ?: "ALL"}] (Total clients: ${wsClients.size})")
 
             try {
                 // Send initial snapshot of last 50 transactions + device list
-                val initialTx = store.getTransactions(clientSerial, 50).map { it.toDto() }
-                val initialDevices = store.getDevices()
-
                 val initMessage = WebSocketMessage(
                     type = "INIT_SNAPSHOT",
-                    transactions = initialTx,
-                    devices = initialDevices
+                    transactions = store.getTransactions(clientSerial, 50).map { it.toDto() },
+                    devices = store.getDevices()
                 )
                 send(Frame.Text(jsonConfig.encodeToString(initMessage)))
 
-                // Keep connection open and handle incoming client commands (e.g. change filter serial)
-                for (frame in incoming) {
-                    if (frame is Frame.Text) {
-                        val text = frame.readText()
-                        // Optional client commands if needed in future
-                    }
-                }
+                // Keep the connection open; client commands are not used yet.
+                for (frame in incoming) { /* ignore */ }
             } catch (_: ClosedReceiveChannelException) {
                 // Normal disconnect
             } catch (e: Exception) {
