@@ -1,5 +1,6 @@
 package com.tap8583.server
 
+import com.tap8583.server.models.DecodedTransactionDto
 import com.tap8583.server.models.WebSocketMessage
 import com.tap8583.server.models.toDto
 import com.tap8583.server.storage.Storage
@@ -40,7 +41,9 @@ class LiveHub(
     private val scope: CoroutineScope,
     private val storage: Storage,
     private val json: Json,
-    private val log: Logger
+    private val log: Logger,
+    /** Applies the workspace's private-field layouts before anything is sent. */
+    private val explain: suspend (String, DecodedTransactionDto) -> DecodedTransactionDto = { _, tx -> tx }
 ) {
     class Client(val session: DefaultWebSocketSession, val workspaceId: String, val filterSerial: String?)
 
@@ -63,7 +66,7 @@ class LiveHub(
                     } catch (e: Exception) {
                         log.error("Could not store transaction {}: {}", tx.id, e.message)
                     }
-                    broadcast(workspaceId, WebSocketMessage(type = "TRANSACTION_UPDATED", transaction = decoded.toDto()))
+                    broadcast(workspaceId, WebSocketMessage(type = "TRANSACTION_UPDATED", transaction = explain(workspaceId, decoded.toDto())))
                 }
                 .launchIn(scope)
         }
@@ -82,6 +85,11 @@ class LiveHub(
         matchers[workspaceId]?.clear(serial)
         storage.clear(workspaceId, serial)
         broadcast(workspaceId, WebSocketMessage(type = "CLEAR", serial = serial))
+    }
+
+    /** Tells a workspace's dashboards to reload, e.g. after its field layouts change. */
+    suspend fun fieldsChanged(workspaceId: String) {
+        broadcast(workspaceId, WebSocketMessage(type = "FIELDS_UPDATED"))
     }
 
     fun add(client: Client) = clients.add(client)

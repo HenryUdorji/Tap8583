@@ -90,12 +90,7 @@ fun Route.accountRoutes(
             "$base${sep}emailToken=$token"
         }
         try {
-            mailer.send(
-                email,
-                "Your Tap8583 sign-in link",
-                "Open this link to sign in to Tap8583. It works once and expires in 15 minutes.\n\n$link\n\n" +
-                    "If you didn't ask for this, you can ignore this email."
-            )
+            mailer.send(email, EmailTemplates.signIn(link))
         } catch (e: Exception) {
             log.warn("Could not send sign-in email: {}", e.message)
             return@post call.respond(HttpStatusCode.BadGateway, ErrorDto("The sign-in email could not be sent. Try again shortly."))
@@ -190,13 +185,7 @@ fun Route.accountRoutes(
         val link = "${config.appUrl}/?invite=$token"
         val workspaceName = accounts.workspacesFor(user.id).firstOrNull { it.id == id }?.name ?: "a workspace"
         val emailed = mailer.canSend && runCatching {
-            mailer.send(
-                email,
-                "${user.name ?: user.email} invited you to $workspaceName on Tap8583",
-                "${user.name ?: user.email} invited you to the \"$workspaceName\" workspace on Tap8583, " +
-                    "where your team watches POS terminal transactions live.\n\nAccept the invite:\n$link\n\n" +
-                    "The link expires in 7 days."
-            )
+            mailer.send(email, EmailTemplates.invite(user.name ?: user.email, workspaceName, link))
         }.onFailure { log.warn("Could not send invite email: {}", it.message) }.isSuccess
         call.respond(HttpStatusCode.Created, CreatedInviteDto(invite.toDto(), link, emailed))
     }

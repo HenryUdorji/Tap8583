@@ -78,8 +78,10 @@ function KeyModeApp({
   // Bumped on every settings save so re-saving the same key retries the connection.
   const [connectNonce, setConnectNonce] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [focusTx, setFocusTx] = useState<string | null>(null);
 
   useEffect(() => {
+    setFocusTx(new URLSearchParams(window.location.search).get("tx"));
     const saved = loadApiKey();
     setApiKey(saved);
     if (!saved) setIsSettingsOpen(true);
@@ -95,6 +97,11 @@ function KeyModeApp({
         connectNonce={connectNonce}
         onUnauthorized={() => setIsSettingsOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        focusTransactionId={focusTx}
+        onFocusHandled={() => {
+          setFocusTx(null);
+          stripParams("tx", "workspace");
+        }}
       />
       <SettingsModal
         isOpen={isSettingsOpen}
@@ -131,7 +138,13 @@ function AccountsApp({ serverUrl, authConfig }: { serverUrl: string; authConfig:
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [onboarding, setOnboarding] = useState<Workspace | null>(null);
-  const [settings, setSettings] = useState<{ open: boolean; tab: SettingsTab }>({ open: false, tab: "terminals" });
+  const [settings, setSettings] = useState<{ open: boolean; tab: SettingsTab; field?: number | null }>({
+    open: false,
+    tab: "terminals",
+  });
+  // A shared transaction link: ?workspace=…&tx=…, kept in the URL until it has been opened.
+  const [shared, setShared] = useState<{ workspace: string | null; tx: string } | null>(null);
+  const [sharedError, setSharedError] = useState<string | null>(null);
 
   const loadMe = useCallback(async () => {
     try {
@@ -147,6 +160,8 @@ function AccountsApp({ serverUrl, authConfig }: { serverUrl: string; authConfig:
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const sharedTx = params.get("tx");
+    if (sharedTx) setShared({ workspace: params.get("workspace"), tx: sharedTx });
     const emailToken = params.get("emailToken");
     const inviteToken = params.get("invite");
     if (inviteToken) savePendingInvite(inviteToken);
@@ -177,14 +192,32 @@ function AccountsApp({ serverUrl, authConfig }: { serverUrl: string; authConfig:
     }
   }, [serverUrl, loadMe]);
 
+  // A shared link picks its workspace, if this person is in it.
+  useEffect(() => {
+    if (!me || !shared?.workspace || verifying) return;
+    if (me.workspaces.some((w) => w.id === shared.workspace)) {
+      saveLastWorkspace(shared.workspace);
+    } else {
+      setSharedError("This link is to a transaction in a workspace you're not a member of. Ask someone in it to invite you.");
+      setShared(null);
+      stripParams("tx", "workspace");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, shared?.workspace, verifying]);
+
   // Keep the selected workspace valid as memberships change.
   useEffect(() => {
     if (!me) return;
     const ids = me.workspaces.map((w) => w.id);
+    // A shared link's workspace wins until its transaction has been opened.
+    if (shared?.workspace && ids.includes(shared.workspace)) {
+      if (workspaceId !== shared.workspace) setWorkspaceId(shared.workspace);
+      return;
+    }
     if (workspaceId && ids.includes(workspaceId)) return;
     const last = loadLastWorkspace();
     setWorkspaceId(last && ids.includes(last) ? last : ids[0] || null);
-  }, [me, workspaceId]);
+  }, [me, workspaceId, shared]);
 
   const selectWorkspace = (id: string) => {
     setWorkspaceId(id);
@@ -210,7 +243,13 @@ function AccountsApp({ serverUrl, authConfig }: { serverUrl: string; authConfig:
       <SignIn
         serverUrl={serverUrl}
         emailSignIn={authConfig.emailSignIn}
-        next={invite ? `/?invite=${encodeURIComponent(invite.token)}` : undefined}
+        next={
+          invite
+            ? `/?invite=${encodeURIComponent(invite.token)}`
+            : shared
+            ? `/?${new URLSearchParams({ ...(shared.workspace ? { workspace: shared.workspace } : {}), tx: shared.tx })}`
+            : undefined
+        }
         invitedTo={invite?.workspaceName}
         error={authError || inviteError}
       />
@@ -235,6 +274,20 @@ function AccountsApp({ serverUrl, authConfig }: { serverUrl: string; authConfig:
         }}
         onDecline={done}
       />
+    );
+  }
+
+  if (sharedError) {
+    return (
+      <AuthLayout title="No access to that transaction" subtitle={sharedError}>
+        <button
+          type="button"
+          onClick={() => setSharedError(null)}
+          className="w-full px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-on-accent text-sm font-semibold"
+        >
+          Go to my dashboard
+        </button>
+      </AuthLayout>
     );
   }
 
@@ -335,10 +388,17 @@ function AccountsApp({ serverUrl, authConfig }: { serverUrl: string; authConfig:
         topBarExtra={switcher}
         emptyAction={{ label: "Connect a terminal", onClick: () => setSettings({ open: true, tab: "terminals" }) }}
         clearAudience="everyone in this workspace"
+        focusTransactionId={shared && (!shared.workspace || shared.workspace === workspace.id) ? shared.tx : null}
+        onFocusHandled={() => {
+          setShared(null);
+          stripParams("tx", "workspace");
+        }}
+        onDescribeField={(field) => setSettings({ open: true, tab: "fields", field })}
       />
       <WorkspaceSettings
         isOpen={settings.open}
         initialTab={settings.tab}
+        initialField={settings.field ?? null}
         onClose={() => setSettings((s) => ({ ...s, open: false }))}
         serverUrl={serverUrl}
         me={me}

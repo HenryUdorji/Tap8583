@@ -1,6 +1,8 @@
 package com.tap8583.server
 
 import com.tap8583.server.accounts.*
+import com.tap8583.server.layouts.FieldLayoutStore
+import com.tap8583.server.layouts.fieldLayoutRoutes
 import com.tap8583.server.db.Db
 import com.tap8583.server.models.*
 import com.tap8583.server.storage.InMemoryStorage
@@ -74,6 +76,9 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
     // -----------------------------------------------------------------------
     val db = config.database?.let { Db.connect(it) }
     val storage: Storage = if (db != null) PostgresStorage(db, jsonConfig) else InMemoryStorage()
+    val layouts = db?.let { FieldLayoutStore(it, jsonConfig) }
+    suspend fun explain(workspaceId: String, tx: DecodedTransactionDto) = layouts?.apply(workspaceId, tx) ?: tx
+    suspend fun explain(workspaceId: String, txs: List<DecodedTransactionDto>) = layouts?.apply(workspaceId, txs) ?: txs
     val accounts = db?.let { Accounts(it) }
     val access = AccessControl(config, accounts)
 
@@ -96,7 +101,7 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
     )
 
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    val hub = LiveHub(appScope, storage, jsonConfig, log)
+    val hub = LiveHub(appScope, storage, jsonConfig, log) { ws, tx -> explain(ws, tx) }
 
     // Hourly housekeeping: retention and expired sessions/links.
     appScope.launch {
@@ -135,6 +140,7 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
         allowMethod(HttpMethod.Options)
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
+        allowMethod(HttpMethod.Put)
         allowMethod(HttpMethod.Patch)
         allowMethod(HttpMethod.Delete)
     }
@@ -167,6 +173,7 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
         }
 
         accountRoutes(config, access, mailer, log)
+        if (layouts != null) fieldLayoutRoutes(access, layouts, storage, onChange = { hub.fieldsChanged(it) })
 
         // --- HTTP Ingest from Android POS listenerLib (and the dashboard's Simulate button) ---
         post("/api/v1/events") {
@@ -222,8 +229,16 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
 
         // --- Decode a pasted or uploaded jPOS log (nothing is stored or broadcast) ---
         post("/api/v1/decode") {
-            if (access.accountsMode) access.requireUser(call) ?: return@post
-            else access.requireViewer(call) ?: return@post
+            // In accounts mode, ?workspace= applies that workspace's field layouts.
+            val layoutWorkspace = if (access.accountsMode) {
+                val user = access.requireUser(call) ?: return@post
+                call.request.queryParameters["workspace"]?.let { ws ->
+                    (access.requireRole(call, user, ws) ?: return@post).first.toString()
+                }
+            } else {
+                access.requireViewer(call) ?: return@post
+                null
+            }
 
             val declaredLength = call.request.contentLength()
             if (declaredLength != null && declaredLength > MAX_DECODE_BYTES) {
@@ -259,7 +274,8 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
                         if (errors.size < 5) errors += (e.message ?: "Could not parse an event")
                     }
                 }
-                val transactions = logMatcher.transactions.value.map { decode(it).toDto() }
+                val decoded = logMatcher.transactions.value.map { decode(it).toDto() }
+                val transactions = layoutWorkspace?.let { explain(it, decoded) } ?: decoded
                 call.respond(
                     DecodeLogResponse(
                         transactions = transactions,
@@ -287,7 +303,15 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
             val serial = call.request.queryParameters["serial"]
                 ?.takeUnless { it.isBlank() || it.equals("ALL", ignoreCase = true) }
             val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 50).coerceIn(1, 200)
-            call.respond(storage.recentTransactions(workspaceId, serial, limit))
+            call.respond(explain(workspaceId, storage.recentTransactions(workspaceId, serial, limit)))
+        }
+
+        // --- One transaction, for shared links to transactions older than the live list ---
+        get("/api/v1/transactions/{id}") {
+            val workspaceId = access.requireViewer(call) ?: return@get
+            val tx = call.parameters["id"]?.let { storage.transaction(workspaceId, it) }
+                ?: return@get call.respond(HttpStatusCode.NotFound, ErrorDto("This transaction is no longer stored"))
+            call.respond(explain(workspaceId, tx))
         }
 
         // --- Clear Transactions API ---
@@ -326,7 +350,7 @@ fun Application.module(config: ServerConfig, mailerOverride: Mailer? = null) {
                 // Send initial snapshot of last 50 transactions + device list
                 val initMessage = WebSocketMessage(
                     type = "INIT_SNAPSHOT",
-                    transactions = storage.recentTransactions(workspaceId, clientSerial, 50),
+                    transactions = explain(workspaceId, storage.recentTransactions(workspaceId, clientSerial, 50)),
                     channelEvents = storage.recentChannelEvents(workspaceId, clientSerial, 100),
                     devices = storage.devices(workspaceId)
                 )

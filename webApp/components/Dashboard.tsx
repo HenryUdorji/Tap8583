@@ -29,7 +29,8 @@ import {
   WS_CLOSE_UNAUTHORIZED,
   streamUrl,
 } from "@/lib/connection";
-import { Access, accessFetch, streamAuthFrame } from "@/lib/api";
+import { Access, accessFetch, streamAuthFrame, transactionLink } from "@/lib/api";
+import { CopyButton } from "@/components/CopyButton";
 
 interface DashboardProps {
   serverUrl: string;
@@ -46,6 +47,11 @@ interface DashboardProps {
   emptyAction?: { label: string; onClick: () => void };
   /** Wording for Clear's confirmation: who else loses the data. */
   clearAudience?: string;
+  /** A transaction to open, e.g. from a shared link. */
+  focusTransactionId?: string | null;
+  onFocusHandled?: () => void;
+  /** Offers "Describe this field" in the field panel. */
+  onDescribeField?: (fieldNumber: number) => void;
 }
 
 /** The live transaction view: timeline, inspector, field detail, stats and alerts. */
@@ -58,6 +64,9 @@ export function Dashboard({
   topBarExtra,
   emptyAction,
   clearAudience = "everyone viewing this server",
+  focusTransactionId,
+  onFocusHandled,
+  onDescribeField,
 }: DashboardProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>(access ? "CONNECTING" : "NO_KEY");
   const [devices, setDevices] = useState<DeviceSummaryDto[]>([]);
@@ -89,6 +98,21 @@ export function Dashboard({
   // A pasted or uploaded log replaces the live list until "Back to live".
   const [decodedLog, setDecodedLog] = useState<(DecodeLogResponse & { name: string }) | null>(null);
   const [isDecodeOpen, setIsDecodeOpen] = useState(false);
+
+  // Bumped when the workspace's field layouts change, to reload with them applied.
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedTransactionId;
+
+  // Keeps an open field open after a reload, now with any new layout applied.
+  const refreshSelectedField = useCallback((tx: DecodedTransactionDto | undefined) => {
+    if (!tx) return;
+    setSelectedField((prev) => {
+      if (!prev) return prev;
+      const fields = [...(tx.request?.fields || []), ...(tx.response?.fields || [])];
+      return fields.find((f) => f.number === prev.number && f.rawValue === prev.rawValue) || prev;
+    });
+  }, []);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -161,7 +185,12 @@ export function Dashboard({
               setConnectionState("LIVE");
               if (data.transactions) {
                 const newestFirst = [...data.transactions].reverse();
-                setTransactions(newestFirst);
+                // An open transaction older than the snapshot (e.g. from a shared link) stays open.
+                setTransactions((prev) => {
+                  const open = prev.find((t) => t.id === selectedIdRef.current);
+                  return open && !newestFirst.some((t) => t.id === open.id) ? [...newestFirst, open] : newestFirst;
+                });
+                refreshSelectedField(newestFirst.find((t) => t.id === selectedIdRef.current));
                 if (newestFirst.length > 0) {
                   setSelectedTransactionId((prev) => prev || newestFirst[0].id);
                 }
@@ -204,6 +233,20 @@ export function Dashboard({
               // Auto-select if nothing is selected
               setSelectedTransactionId((prev) => prev || updated.id);
               pushAlert(alertForTransaction(updated));
+            } else if (data.type === "FIELDS_UPDATED") {
+              // Reload with the new layouts, including the open transaction if it's older than the snapshot.
+              const openId = selectedIdRef.current;
+              if (openId) {
+                accessFetch(serverUrl, access, `/transactions/${encodeURIComponent(openId)}`)
+                  .then((res) => (res.ok ? res.json() : null))
+                  .then((tx: DecodedTransactionDto | null) => {
+                    if (!tx) return;
+                    setTransactions((prev) => prev.map((t) => (t.id === tx.id ? tx : t)));
+                    refreshSelectedField(tx);
+                  })
+                  .catch(() => undefined);
+              }
+              setReloadNonce((n) => n + 1);
             } else if (data.type === "CLEAR") {
               if (data.serial) {
                 setTransactions((prev) => prev.filter((t) => t.serial !== data.serial));
@@ -252,12 +295,58 @@ export function Dashboard({
       if (wsRef.current) wsRef.current.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverUrl, accessKey, selectedSerial, connectNonce, pushAlert]);
+  }, [serverUrl, accessKey, selectedSerial, connectNonce, reloadNonce, pushAlert]);
+
+  // Open a shared transaction once the live list has loaded, fetching it if it is older.
+  const focusHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusTransactionId || !access || connectionState !== "LIVE") return;
+    if (focusHandledRef.current === focusTransactionId) return;
+    focusHandledRef.current = focusTransactionId;
+    const open = (id: string) => {
+      setDecodedLog(null);
+      setSelectedTransactionId(id);
+      setSelectedField(null);
+      setMobileView("detail");
+    };
+    if (transactions.some((t) => t.id === focusTransactionId)) {
+      open(focusTransactionId);
+      onFocusHandled?.();
+      return;
+    }
+    accessFetch(serverUrl, access, `/transactions/${encodeURIComponent(focusTransactionId)}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const tx: DecodedTransactionDto = await res.json();
+          setTransactions((prev) => (prev.some((t) => t.id === tx.id) ? prev : [...prev, tx]));
+          open(tx.id);
+        } else {
+          setAlerts((prev) => [
+            ...prev,
+            {
+              id: `shared-${focusTransactionId}`,
+              level: "warning",
+              title: "Shared transaction not found",
+              detail:
+                res.status === 404
+                  ? "It was cleared, or it's older than the history this server keeps."
+                  : `The server said HTTP ${res.status}.`,
+            },
+          ]);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => onFocusHandled?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTransactionId, connectionState, accessKey]);
 
   // Escape closes the field detail drawer.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectedField(null);
+      if (e.key !== "Escape") return;
+      // Escape in another dialog (settings, decode a log) closes that dialog, not the field.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]:not([aria-label="Field details"])')) return;
+      setSelectedField(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -578,6 +667,11 @@ export function Dashboard({
             selectedField={selectedField}
             onSelectField={(field) => setSelectedField(field)}
             onBack={() => setMobileView("list")}
+            actions={
+              selectedTransaction && access && !decodedLog ? (
+                <CopyButton text={transactionLink(access, selectedTransaction.id)} label="Copy link" />
+              ) : undefined
+            }
             summary={
               selectedTransaction && (
                 <TransactionSummary
@@ -594,7 +688,7 @@ export function Dashboard({
 
         {/* Field detail: a column on wide screens… */}
         <div className="hidden xl:block w-96 flex-shrink-0 h-full">
-          <FieldDetailPanel field={selectedField} />
+          <FieldDetailPanel field={selectedField} onDescribe={decodedLog ? undefined : onDescribeField} />
         </div>
 
         {/* …and a slide-over drawer below that */}
@@ -607,7 +701,18 @@ export function Dashboard({
               onClick={() => setSelectedField(null)}
             />
             <div className="relative w-full sm:w-96 h-full shadow-2xl">
-              <FieldDetailPanel field={selectedField} onClose={() => setSelectedField(null)} />
+              <FieldDetailPanel
+                field={selectedField}
+                onClose={() => setSelectedField(null)}
+                onDescribe={
+                  decodedLog || !onDescribeField
+                    ? undefined
+                    : (n) => {
+                        setSelectedField(null);
+                        onDescribeField(n);
+                      }
+                }
+              />
             </div>
           </div>
         )}

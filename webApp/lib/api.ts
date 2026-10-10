@@ -141,3 +141,33 @@ export const savePendingInvite = (token: string | null) => write(() => window.se
 
 /** Published listener version shown in the install snippet. */
 export const LISTENER_VERSION = "1.0.0";
+
+/** How a workspace's acquirer lays out one private field (see FieldLayouts.kt). */
+export interface LayoutPart {
+  tag?: string | null;
+  name: string;
+  length?: number | null;
+}
+
+export interface FieldLayout {
+  field: number;
+  name: string;
+  description?: string | null;
+  format: "text" | "tlv" | "fixed";
+  tagLength: number;
+  lengthDigits: number;
+  parts: LayoutPart[];
+}
+
+export interface FieldPreview {
+  decodedValue?: string | null;
+  subFields: { name: string; rawValue: string; decodedValue: string }[];
+}
+
+/** A link that opens one transaction in this dashboard. */
+export function transactionLink(access: Access, transactionId: string): string {
+  const url = new URL(window.location.origin + window.location.pathname);
+  if (access.mode === "accounts") url.searchParams.set("workspace", access.workspaceId);
+  url.searchParams.set("tx", transactionId);
+  return url.toString();
+}

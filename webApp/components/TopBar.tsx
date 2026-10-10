@@ -72,9 +72,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   const isConnected = connectionState === "LIVE";
 
   return (
-    <header className="min-h-14 border-b border-white/10 bg-raised/90 backdrop-blur-md px-3 sm:px-4 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-2 select-none z-20">
+    <header className="min-h-14 border-b border-white/10 bg-raised/90 backdrop-blur-md px-3 sm:px-4 py-2 min-[1360px]:py-0 min-[1360px]:h-14 flex flex-wrap min-[1360px]:flex-nowrap items-center gap-x-3 gap-y-2 select-none z-20">
       {/* Branding */}
-      <div className="order-1 flex items-center gap-2 lg:pr-3 lg:border-r border-white/10 flex-shrink-0">
+      <div className="order-1 flex items-center gap-2 min-w-0 min-[1360px]:pr-3 min-[1360px]:border-r border-white/10 flex-shrink-0">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
           <CreditCard className="w-4 h-4 text-on-accent" />
         </div>
@@ -89,10 +89,10 @@ export const TopBar: React.FC<TopBarProps> = ({
         {extra}
       </div>
 
-      {/* Device, message filter and search: a second row below lg */}
-      <div className="order-3 lg:order-2 w-full lg:w-auto lg:flex-1 flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-0">
+      {/* Device, message filter and search: a second row below 1360px */}
+      <div className="order-3 min-[1360px]:order-2 w-full min-[1360px]:w-auto min-[1360px]:flex-1 flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-0">
         {/* Device Selector */}
-        <div className="flex items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-initial">
+        <div className="flex items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-none sm:w-48">
           <Layers className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
           <select
             aria-label="Device"
@@ -101,7 +101,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             className="bg-transparent text-xs text-slate-200 font-mono outline-none cursor-pointer pr-1 min-w-0 w-full"
           >
             <option value="ALL" className="bg-slate-900 text-slate-200">
-              All Devices ({devices.length} active)
+              All devices ({devices.length})
             </option>
             {devices.map((d) => (
               <option key={d.serial} value={d.serial} className="bg-slate-900 text-slate-200">
@@ -112,7 +112,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Message Filter: tabs on wide screens, a select otherwise */}
-        <div className="hidden xl:flex items-center bg-slate-900/70 p-1 rounded-lg border border-white/5 text-xs font-mono flex-shrink-0">
+        <div className="hidden min-[1840px]:flex items-center bg-slate-900/70 p-1 rounded-lg border border-white/5 text-xs font-mono flex-shrink-0">
           {MESSAGE_FILTERS.map((tab) => (
             <button
               key={tab.id}
@@ -129,8 +129,8 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
           ))}
         </div>
-        <div className="flex xl:hidden items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-initial">
-          <Filter className="w-3.5 h-3.5 text-slate-400" />
+        <div className="flex min-[1840px]:hidden items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-none sm:w-44">
+          <Filter className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
           <select
             aria-label="Message type"
             value={messageFilter}
@@ -146,7 +146,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Search */}
-        <div className="basis-full sm:basis-auto flex-1 min-w-[10rem] lg:max-w-md relative">
+        <div className="basis-full sm:basis-auto flex-1 min-w-[12rem] min-[1360px]:max-w-md relative">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -169,15 +169,16 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Right Controls & Status */}
-      <div className="order-2 lg:order-3 ml-auto lg:ml-0 flex items-center gap-1 sm:gap-2 flex-shrink-0">
+      <div className="order-2 min-[1360px]:order-3 ml-auto min-[1360px]:ml-0 flex items-center gap-1 sm:gap-2 flex-shrink-0">
         {/* Quick Simulate Button */}
         <button
           onClick={onSimulate}
           title="Inject mock NIBSS ISO 8583 transaction"
+          aria-label="Simulate a transaction"
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition-all"
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Simulate Txn</span>
+          <span className="hidden sm:inline min-[1360px]:hidden">Simulate Txn</span>
         </button>
 
         {/* Paste / upload a log */}

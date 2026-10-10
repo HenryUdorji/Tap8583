@@ -32,6 +32,8 @@ interface PacketInspectorProps {
   onBack?: () => void;
   /** Replaces the default summary strip, e.g. with linked reversals and channel errors. */
   summary?: React.ReactNode;
+  /** Extra buttons for the header, e.g. "Copy link". */
+  actions?: React.ReactNode;
 }
 
 type TabType = "REQUEST" | "RESPONSE" | "DIFF" | "RAW";
@@ -42,6 +44,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
   onSelectField,
   onBack,
   summary,
+  actions,
 }) => {
   // The parent remounts this component per transaction (key), so tab and
   // reveal state never carry over to the next transaction.
@@ -163,6 +166,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
         </div>
 
         {/* Packet Metadata */}
+        <div className="flex items-center gap-3">
         {currentPacket && (
           <div className="hidden md:flex items-center gap-3 text-xs font-mono text-slate-400">
             <span className="flex items-center gap-1">
@@ -179,6 +183,8 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
             )}
           </div>
         )}
+        {actions}
+        </div>
       </div>
 
       {summary ?? <TransactionSummary transaction={transaction} />}

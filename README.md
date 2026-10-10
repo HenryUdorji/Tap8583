@@ -23,6 +23,8 @@ It features a high-performance **Kotlin / Ktor Ingestion Server** and a sleek **
 * **🔌 Channel Errors Next to the Transaction**: Read timeouts, host disconnects and failed connects reported by jPOS show on the transaction they affected.
 * **↩️ Reversal Linking**: 0420/0400 reversals link to the transaction they reverse (via DE90 or the STAN), in both directions.
 * **📊 Stats & Alerts**: Approval rate, average and p95 round trip, and pop-up alerts for timeouts, host errors, slow responses and integration-type declines.
+* **🔗 Shareable Transaction Links**: "Copy link" on any transaction opens it for anyone in the same workspace, even once it has scrolled out of the live list.
+* **🧩 Your Acquirer's Private Fields**: Describe how your acquirer lays out fields like DE48 or DE62 (tags, fixed positions, or just a name) and every transaction in the workspace is explained that way, including stored history.
 * **👥 Accounts & Workspaces**: Sign in with an emailed link, create a workspace, invite your team, and give each POS app its own revocable terminal key. Transaction history is kept in Postgres.
 * **🔒 Server-Side Masking**: PAN, Track 2, expiry, PIN block and the card data inside DE55 are masked on the server before anything is stored or shown.
 
