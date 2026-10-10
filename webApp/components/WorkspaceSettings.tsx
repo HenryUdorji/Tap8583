@@ -1,16 +1,19 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { KeyRound, LogOut, Plus, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Braces, KeyRound, LogOut, Plus, Settings, Trash2, UserPlus, Users, X } from "lucide-react";
+import { FieldLayoutsTab } from "./FieldLayouts";
 import { IngestKey, Invite, Me, Member, Workspace, request } from "@/lib/api";
 import { ConnectTerminal } from "./ConnectTerminal";
 import { CopyButton } from "./CopyButton";
 
-export type SettingsTab = "terminals" | "people" | "workspace" | "account";
+export type SettingsTab = "terminals" | "people" | "fields" | "workspace" | "account";
 
 interface WorkspaceSettingsProps {
   isOpen: boolean;
   initialTab?: SettingsTab;
+  /** With the "fields" tab: open the editor for this field. */
+  initialField?: number | null;
   onClose: () => void;
   serverUrl: string;
   me: Me;
@@ -32,6 +35,7 @@ const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString(un
 export const WorkspaceSettings: React.FC<WorkspaceSettingsProps> = ({
   isOpen,
   initialTab = "terminals",
+  initialField = null,
   onClose,
   serverUrl,
   me,
@@ -116,6 +120,7 @@ export const WorkspaceSettings: React.FC<WorkspaceSettingsProps> = ({
   const tabs: { id: SettingsTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: "terminals", label: "Terminals", icon: KeyRound },
     { id: "people", label: "People", icon: Users },
+    { id: "fields", label: "Fields", icon: Braces },
     { id: "workspace", label: "Workspace", icon: Settings },
     { id: "account", label: "Account", icon: LogOut },
   ];
@@ -156,6 +161,8 @@ export const WorkspaceSettings: React.FC<WorkspaceSettingsProps> = ({
               {error}
             </div>
           )}
+
+          {tab === "fields" && <FieldLayoutsTab serverUrl={serverUrl} workspace={workspace} initialField={initialField} />}
 
           {tab === "terminals" && (
             <>

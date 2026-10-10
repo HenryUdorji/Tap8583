@@ -54,7 +54,10 @@ data class DecodedFieldDto(
     val subFields: List<SubFieldDto>? = null,
     val tlvEntries: List<TlvEntryDto>? = null,
     val isSensitive: Boolean = false,
-    val isCurrentlyMasked: Boolean = false
+    val isCurrentlyMasked: Boolean = false,
+    /** Set when the workspace describes this field itself. */
+    val description: String? = null,
+    val workspaceLayout: Boolean = false
 )
 
 @Serializable
@@ -289,3 +292,33 @@ data class CreatedIngestKeyDto(val key: IngestKeyDto, val value: String)
 @Serializable data class EmailRequest(val email: String, val next: String? = null)
 @Serializable data class TokenRequest(val token: String)
 @Serializable data class ErrorDto(val error: String)
+
+/**
+ * How one private field is laid out by the workspace's acquirer.
+ *  - "text": just a name and description
+ *  - "tlv":  tag ([tagLength] chars) + length ([lengthDigits] digits) + value, repeated; [parts] name the tags
+ *  - "fixed": consecutive [parts] of fixed length; a part without a length takes the rest
+ */
+@Serializable
+data class FieldLayoutDto(
+    val field: Int,
+    val name: String,
+    val description: String? = null,
+    val format: String = "text",
+    val tagLength: Int = 2,
+    val lengthDigits: Int = 3,
+    val parts: List<LayoutPartDto> = emptyList()
+)
+
+@Serializable
+data class LayoutPartDto(
+    /** The tag for "tlv" layouts; unused for "fixed". */
+    val tag: String? = null,
+    val name: String,
+    /** The length for "fixed" layouts. */
+    val length: Int? = null
+)
+
+@Serializable data class FieldPreviewRequest(val layout: FieldLayoutDto, val raw: String)
+@Serializable data class FieldPreviewDto(val decodedValue: String?, val subFields: List<SubFieldDto>)
+@Serializable data class FieldSampleDto(val raw: String?)

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check, Copy, FileText, Info, Layers, Tag, X } from "lucide-react";
+import { Check, Copy, FileText, Info, Layers, Pencil, Tag, X } from "lucide-react";
+import { PROTECTED_FIELDS } from "./FieldLayouts";
 import { DecodedFieldDto } from "@/lib/types";
 import {
   CURRENCY_CODES,
@@ -15,9 +16,11 @@ interface FieldDetailPanelProps {
   field: DecodedFieldDto | null;
   /** When set (drawer mode), a close button is shown in the header. */
   onClose?: () => void;
+  /** Lets the workspace describe this field (accounts mode). */
+  onDescribe?: (fieldNumber: number) => void;
 }
 
-export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field, onClose }) => {
+export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field, onClose, onDescribe }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = (text: string) => {
@@ -93,7 +96,23 @@ export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field, onClo
             <span className="text-[10px] text-slate-400">
               {field.isoType} · {field.dataType}
             </span>
+            {field.workspaceLayout && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-400">
+                YOUR WORKSPACE
+              </span>
+            )}
           </div>
+          {field.description && <p className="text-slate-300 font-sans text-xs leading-relaxed">{field.description}</p>}
+          {onDescribe && !PROTECTED_FIELDS.has(field.number) && (
+            <button
+              type="button"
+              onClick={() => onDescribe(field.number)}
+              className="inline-flex items-center gap-1 pt-1 font-sans text-[11px] font-medium text-sky-400 hover:text-sky-300"
+            >
+              <Pencil className="w-3 h-3" />
+              {field.workspaceLayout ? "Edit how your workspace reads this field" : "Describe this field for your workspace"}
+            </button>
+          )}
         </div>
 
         {/* Primary Decoded Value */}
@@ -105,6 +124,19 @@ export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field, onClo
             <div className="text-sky-200 font-semibold text-xs leading-relaxed">
               {field.decodedValue}
             </div>
+          </div>
+        )}
+
+        {/* Parts from the workspace's own layout */}
+        {field.workspaceLayout && field.subFields && field.subFields.length > 0 && (
+          <div className="bg-slate-900/60 border border-white/10 rounded-xl p-3 space-y-1.5">
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Parts</div>
+            {field.subFields.map((sub, i) => (
+              <div key={i} className="flex items-start justify-between gap-3 p-2 rounded bg-black/40 border border-white/5 text-[11px]">
+                <span className={sub.name.startsWith("Not matched") ? "text-amber-400" : "text-slate-400"}>{sub.name}</span>
+                <span className="text-slate-200 font-semibold break-all text-right">{sub.decodedValue}</span>
+              </div>
+            ))}
           </div>
         )}
 

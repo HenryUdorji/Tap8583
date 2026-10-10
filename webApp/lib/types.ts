@@ -57,6 +57,9 @@ export interface DecodedFieldDto {
   tlvEntries?: TlvEntryDto[] | null;
   isSensitive: boolean;
   isCurrentlyMasked: boolean;
+  /** Set when the workspace describes this field itself. */
+  description?: string | null;
+  workspaceLayout?: boolean;
 }
 
 export interface SubFieldDto {
@@ -98,7 +101,7 @@ export interface ChannelEventDto {
 }
 
 export interface WebSocketMessage {
-  type: "INIT_SNAPSHOT" | "TRANSACTION_UPDATED" | "CHANNEL_EVENT" | "DEVICE_LIST" | "CLEAR";
+  type: "INIT_SNAPSHOT" | "TRANSACTION_UPDATED" | "CHANNEL_EVENT" | "DEVICE_LIST" | "CLEAR" | "FIELDS_UPDATED";
   transaction?: DecodedTransactionDto;
   transactions?: DecodedTransactionDto[];
   channelEvent?: ChannelEventDto;

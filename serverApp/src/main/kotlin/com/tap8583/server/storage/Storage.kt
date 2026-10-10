@@ -16,6 +16,8 @@ interface Storage {
     suspend fun saveTransaction(workspaceId: String, tx: DecodedTransaction)
     /** Newest last. [serial] null means every device. */
     suspend fun recentTransactions(workspaceId: String, serial: String?, limit: Int): List<DecodedTransactionDto>
+    /** One transaction by id, if this workspace still has it. */
+    suspend fun transaction(workspaceId: String, id: String): DecodedTransactionDto?
     suspend fun devices(workspaceId: String): List<DeviceSummaryDto>
     suspend fun saveChannelEvent(workspaceId: String, event: ChannelErrorEvent)
     /** Newest last. */
@@ -42,6 +44,9 @@ class InMemoryStorage(private val maxPerDevice: Int = 50) : Storage {
 
     override suspend fun recentTransactions(workspaceId: String, serial: String?, limit: Int) =
         txStore(workspaceId).getTransactions(serial, limit).map { it.toDto() }
+
+    override suspend fun transaction(workspaceId: String, id: String) =
+        txStore(workspaceId).getTransactions(null, Int.MAX_VALUE).firstOrNull { it.id == id }?.toDto()
 
     override suspend fun devices(workspaceId: String) = txStore(workspaceId).getDevices()
 

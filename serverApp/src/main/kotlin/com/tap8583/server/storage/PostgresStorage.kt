@@ -54,6 +54,12 @@ class PostgresStorage(private val db: Db, private val json: KJson) : Storage {
             rows.map { json.decodeFromString<DecodedTransactionDto>(it) }.reversed()
         }
 
+    override suspend fun transaction(workspaceId: String, id: String): DecodedTransactionDto? = db.tx {
+        query("SELECT data FROM transactions WHERE id = ? AND workspace_id = ?", id, UUID.fromString(workspaceId)) {
+            it.getString("data")
+        }.firstOrNull()?.let { json.decodeFromString<DecodedTransactionDto>(it) }
+    }
+
     override suspend fun devices(workspaceId: String): List<DeviceSummaryDto> = db.tx {
         query(
             """
