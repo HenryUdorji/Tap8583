@@ -1,39 +1,44 @@
 "use client";
 
-import React, { useState } from "react";
-import { Check, Key, Server, Settings, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Key, Server, Settings, X } from "lucide-react";
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   apiKey: string;
-  onSaveApiKey: (key: string) => void;
-  serverUrl: string;
-  onSaveServerUrl: (url: string) => void;
+  /** The user's explicit server URL, or "" to use the default. */
+  serverUrlOverride: string;
+  /** Shown as the placeholder when no override is set. */
+  defaultServerUrl: string;
+  onSave: (apiKey: string, serverUrlOverride: string) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   apiKey,
-  onSaveApiKey,
-  serverUrl,
-  onSaveServerUrl,
+  serverUrlOverride,
+  defaultServerUrl,
+  onSave,
 }) => {
   const [localKey, setLocalKey] = useState(apiKey);
-  const [localUrl, setLocalUrl] = useState(serverUrl);
-  const [saved, setSaved] = useState(false);
+  const [localUrl, setLocalUrl] = useState(serverUrlOverride);
+
+  // Start from the current values each time the dialog opens.
+  useEffect(() => {
+    if (isOpen) {
+      setLocalKey(apiKey);
+      setLocalUrl(serverUrlOverride);
+    }
+  }, [isOpen, apiKey, serverUrlOverride]);
 
   if (!isOpen) return null;
 
   const handleSave = () => {
-    onSaveApiKey(localKey);
-    onSaveServerUrl(localUrl);
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      onClose();
-    }, 800);
+    onSave(localKey, localUrl);
+    // Close straight away: if the key is rejected the dashboard reopens this dialog.
+    onClose();
   };
 
   return (
@@ -59,17 +64,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <Key className="w-3.5 h-3.5 text-sky-400" />
-              <span>Team Workspace API Key</span>
+              <span>Viewer API Key</span>
             </label>
             <input
-              type="text"
+              type="password"
+              autoComplete="off"
               value={localKey}
               onChange={(e) => setLocalKey(e.target.value)}
               placeholder="tap_live_..."
               className="w-full bg-slate-900 border border-white/10 focus:border-sky-500/60 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 outline-none transition-all"
             />
             <p className="text-[11px] text-slate-500">
-              Transactions are scoped to this key to prevent unauthorized access across terminals.
+              Needed to see transactions. It is stored only in this browser.
             </p>
           </div>
 
@@ -77,17 +83,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <Server className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Server WebSocket Endpoint</span>
+              <span>Server URL (optional)</span>
             </label>
             <input
               type="text"
               value={localUrl}
               onChange={(e) => setLocalUrl(e.target.value)}
-              placeholder="ws://localhost:8080/ws/stream"
+              placeholder={defaultServerUrl || "https://tap8583.example.com"}
               className="w-full bg-slate-900 border border-white/10 focus:border-indigo-500/60 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 outline-none transition-all"
             />
             <p className="text-[11px] text-slate-500">
-              Points to your Hetzner VPS or local Kotlin Ktor backend.
+              Leave blank to use the server this dashboard is hosted on.
             </p>
           </div>
 
@@ -97,7 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Android Quick Start (listenerLib):
             </div>
             <div className="text-slate-300 text-[11px] bg-black/40 p-2 rounded select-text">
-              VisualizerLogListener.install(apiKey = &quot;{localKey || "YOUR_KEY"}&quot;)
+              VisualizerLogListener.install(apiKey = &quot;YOUR_INGEST_KEY&quot;, endpoint = &quot;{(localUrl || defaultServerUrl || "https://your-server")}/api/v1/events&quot;)
             </div>
           </div>
         </div>
@@ -114,8 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={handleSave}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs shadow-lg shadow-sky-500/20 transition-all"
           >
-            {saved ? <Check className="w-3.5 h-3.5 text-slate-950" /> : null}
-            <span>{saved ? "Saved & Connected" : "Save Changes"}</span>
+            <span>Save Changes</span>
           </button>
         </div>
       </div>

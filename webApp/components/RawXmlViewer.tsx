@@ -25,29 +25,21 @@ export const RawXmlViewer: React.FC<RawXmlViewerProps> = ({ xml }) => {
     );
   }
 
-  // Syntax highlighting for XML tags, attributes, and values
+  // Syntax highlighting for XML tags, attributes, and values.
+  // Rendered as React elements (never as HTML) because packet XML comes from
+  // terminals over the network and must not be able to inject markup.
   const renderHighlightedXml = (raw: string) => {
     const lines = raw.split("\n");
-    return lines.map((line, idx) => {
-      // Simple regex parser for tags and attributes
-      const highlighted = line
-        .replace(/(&lt;|<)(\/?[\w-]+)/g, '<span class="text-sky-400">$1$2</span>')
-        .replace(/(\w+)=("[^"]*")/g, '<span class="text-purple-400">$1</span>=<span class="text-emerald-300">$2</span>')
-        .replace(/(&gt;|>)/g, '<span class="text-sky-400">$1</span>')
-        .replace(/(<!--.*?-->)/g, '<span class="text-slate-500 italic">$1</span>');
-
-      return (
-        <div key={idx} className="flex">
-          <span className="w-8 select-none text-right pr-3 text-slate-600 font-mono text-[11px]">
-            {idx + 1}
-          </span>
-          <span
-            className="flex-1 font-mono text-xs text-slate-200"
-            dangerouslySetInnerHTML={{ __html: highlighted }}
-          />
-        </div>
-      );
-    });
+    return lines.map((line, idx) => (
+      <div key={idx} className="flex">
+        <span className="w-8 select-none text-right pr-3 text-slate-600 font-mono text-[11px]">
+          {idx + 1}
+        </span>
+        <span className="flex-1 font-mono text-xs text-slate-200 whitespace-pre-wrap break-all">
+          {highlightXmlLine(line)}
+        </span>
+      </div>
+    ));
   };
 
   return (
@@ -71,3 +63,30 @@ export const RawXmlViewer: React.FC<RawXmlViewerProps> = ({ xml }) => {
     </div>
   );
 };
+
+// Comments, tag openings (<name, </name), attributes (name="value"), and tag endings (>, />).
+const XML_TOKEN = /(<!--.*?-->)|(<\/?[\w:.-]+)|([\w:.-]+)(=)("[^"]*"|'[^']*')|(\/?>)/g;
+
+function highlightXmlLine(line: string): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  for (const match of line.matchAll(XML_TOKEN)) {
+    const start = match.index ?? 0;
+    if (start > last) nodes.push(line.slice(last, start));
+    if (match[1]) {
+      nodes.push(<span key={key++} className="text-slate-500 italic">{match[1]}</span>);
+    } else if (match[2]) {
+      nodes.push(<span key={key++} className="text-sky-400">{match[2]}</span>);
+    } else if (match[3]) {
+      nodes.push(<span key={key++} className="text-purple-400">{match[3]}</span>);
+      nodes.push(match[4]);
+      nodes.push(<span key={key++} className="text-emerald-300">{match[5]}</span>);
+    } else if (match[6]) {
+      nodes.push(<span key={key++} className="text-sky-400">{match[6]}</span>);
+    }
+    last = start + match[0].length;
+  }
+  if (last < line.length) nodes.push(line.slice(last));
+  return nodes;
+}

@@ -12,13 +12,27 @@ import { TransactionTimeline } from "@/components/TransactionTimeline";
 import { PacketInspector } from "@/components/PacketInspector";
 import { FieldDetailPanel } from "@/components/FieldDetailPanel";
 import { SettingsModal } from "@/components/SettingsModal";
+import {
+  ConnectionState,
+  WS_CLOSE_UNAUTHORIZED,
+  apiUrl,
+  loadApiKey,
+  loadServerUrlOverride,
+  normaliseServerUrl,
+  resolveServerUrl,
+  saveApiKey,
+  saveServerUrlOverride,
+  streamUrl,
+} from "@/lib/connection";
 
 export default function Home() {
-  const [apiKey, setApiKey] = useState(process.env.NEXT_PUBLIC_TAP8583_API_KEY || "tap_live_secret");
-  const [serverUrl, setServerUrl] = useState(process.env.NEXT_PUBLIC_SERVER_WS_URL || "ws://localhost:8080/ws/stream");
-  const [httpEndpoint, setHttpEndpoint] = useState(process.env.NEXT_PUBLIC_SERVER_HTTP_URL || "http://localhost:8080/api/v1/events");
+  const [apiKey, setApiKey] = useState("");
+  const [serverUrlOverride, setServerUrlOverride] = useState("");
+  const [serverUrl, setServerUrl] = useState("");
+  // Bumped on every settings save so re-saving the same key retries the connection.
+  const [connectNonce, setConnectNonce] = useState(0);
 
-  const [isConnected, setIsConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("CONNECTING");
   const [devices, setDevices] = useState<DeviceSummaryDto[]>([]);
   const [selectedSerial, setSelectedSerial] = useState<string>("ALL");
 
@@ -35,45 +49,35 @@ export default function Home() {
 
   // Load preferences from localStorage on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedKey = localStorage.getItem("tap8583_api_key");
-      if (savedKey) setApiKey(savedKey);
-
-      const savedUrl = localStorage.getItem("tap8583_server_url");
-      if (savedUrl) {
-        setServerUrl(savedUrl);
-        const httpUrl = savedUrl
-          .replace("ws://", "http://")
-          .replace("wss://", "https://")
-          .replace("/ws/stream", "/api/v1/events");
-        setHttpEndpoint(httpUrl);
-      } else if (process.env.NEXT_PUBLIC_SERVER_WS_URL) {
-        setServerUrl(process.env.NEXT_PUBLIC_SERVER_WS_URL);
-      }
+    const savedKey = loadApiKey();
+    const savedOverride = loadServerUrlOverride();
+    setApiKey(savedKey);
+    setServerUrlOverride(savedOverride);
+    setServerUrl(resolveServerUrl(savedOverride));
+    if (!savedKey) {
+      setConnectionState("NO_KEY");
+      setIsSettingsOpen(true);
     }
   }, []);
 
-  // Connect to WebSocket backend
+  // Connect to WebSocket backend. The key goes in the first frame, never the URL.
   useEffect(() => {
+    if (!serverUrl || !apiKey) return;
     let active = true;
 
     const connectWebSocket = () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      setConnectionState("CONNECTING");
 
       try {
-        const queryParams = new URLSearchParams();
-        if (apiKey) queryParams.set("apiKey", apiKey);
-        if (selectedSerial && selectedSerial !== "ALL") queryParams.set("serial", selectedSerial);
-
-        const url = `${serverUrl}?${queryParams.toString()}`;
-        const ws = new WebSocket(url);
+        const ws = new WebSocket(streamUrl(serverUrl));
         wsRef.current = ws;
 
         ws.onopen = () => {
           if (!active) return;
-          setIsConnected(true);
+          ws.send(JSON.stringify({ type: "AUTH", apiKey, serial: selectedSerial }));
         };
 
         ws.onmessage = (event) => {
@@ -82,10 +86,12 @@ export default function Home() {
             const data: WebSocketMessage = JSON.parse(event.data);
 
             if (data.type === "INIT_SNAPSHOT") {
+              setConnectionState("LIVE");
               if (data.transactions) {
-                setTransactions(data.transactions.reverse());
-                if (data.transactions.length > 0) {
-                  setSelectedTransactionId((prev) => prev || data.transactions![0].id);
+                const newestFirst = [...data.transactions].reverse();
+                setTransactions(newestFirst);
+                if (newestFirst.length > 0) {
+                  setSelectedTransactionId((prev) => prev || newestFirst[0].id);
                 }
               }
               if (data.devices) {
@@ -121,7 +127,13 @@ export default function Home() {
               // Auto-select if nothing is selected
               setSelectedTransactionId((prev) => prev || updated.id);
             } else if (data.type === "CLEAR") {
-              setTransactions([]);
+              if (data.serial) {
+                setTransactions((prev) => prev.filter((t) => t.serial !== data.serial));
+                setDevices((prev) => prev.filter((d) => d.serial !== data.serial));
+              } else {
+                setTransactions([]);
+                setDevices([]);
+              }
               setSelectedTransactionId(null);
               setSelectedField(null);
             }
@@ -130,20 +142,24 @@ export default function Home() {
           }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           if (!active) return;
-          setIsConnected(false);
+          if (event.code === WS_CLOSE_UNAUTHORIZED) {
+            setConnectionState("UNAUTHORIZED");
+            setIsSettingsOpen(true);
+            return;
+          }
+          setConnectionState("OFFLINE");
           reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
         };
 
         ws.onerror = () => {
           if (!active) return;
-          setIsConnected(false);
           ws.close();
         };
       } catch (e) {
         console.error("WebSocket connection failed:", e);
-        setIsConnected(false);
+        setConnectionState("OFFLINE");
         reconnectTimeoutRef.current = setTimeout(connectWebSocket, 4000);
       }
     };
@@ -155,7 +171,7 @@ export default function Home() {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [serverUrl, apiKey, selectedSerial]);
+  }, [serverUrl, apiKey, selectedSerial, connectNonce]);
 
   // Selected Transaction Object
   const selectedTransaction = useMemo(() => {
@@ -265,8 +281,10 @@ export default function Home() {
 `;
 
     try {
+      const eventsUrl = apiUrl(serverUrl, "/events");
+
       // 1. Send Request
-      await fetch(httpEndpoint, {
+      await fetch(eventsUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/xml",
@@ -278,7 +296,7 @@ export default function Home() {
 
       // 2. Wait 450ms and Send Response (simulating network roundtrip)
       setTimeout(async () => {
-        await fetch(httpEndpoint, {
+        await fetch(eventsUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/xml",
@@ -295,13 +313,21 @@ export default function Home() {
 
   // Handler: Clear session
   const handleClear = async () => {
+    const scope = selectedSerial !== "ALL" ? `device ${selectedSerial}` : "all devices";
+    if (!window.confirm(`Delete the transactions for ${scope}? This clears them for everyone viewing this server.`)) {
+      return;
+    }
     try {
-      const clearUrl = httpEndpoint.replace("/events", "/clear");
-      await fetch(clearUrl, {
+      const query = selectedSerial !== "ALL" ? `?serial=${encodeURIComponent(selectedSerial)}` : "";
+      const res = await fetch(apiUrl(serverUrl, `/clear${query}`), {
         method: "POST",
         headers: { "x-api-key": apiKey },
       });
-      setTransactions([]);
+      if (!res.ok) {
+        console.error("Clear failed:", res.status);
+        return;
+      }
+      // The server broadcasts CLEAR, which updates the list.
       setSelectedTransactionId(null);
       setSelectedField(null);
     } catch (e) {
@@ -324,7 +350,7 @@ export default function Home() {
     <div className="flex flex-col h-screen overflow-hidden bg-[#090D16] text-slate-100 font-sans">
       {/* 1. Fixed Top Toolbar */}
       <TopBar
-        isConnected={isConnected}
+        connectionState={connectionState}
         selectedSerial={selectedSerial}
         onSelectSerial={setSelectedSerial}
         devices={devices}
@@ -369,19 +395,17 @@ export default function Home() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         apiKey={apiKey}
-        onSaveApiKey={(key) => {
-          setApiKey(key);
-          if (typeof window !== "undefined") localStorage.setItem("tap8583_api_key", key);
-        }}
-        serverUrl={serverUrl}
-        onSaveServerUrl={(url) => {
-          setServerUrl(url);
-          const httpUrl = url
-            .replace("ws://", "http://")
-            .replace("wss://", "https://")
-            .replace("/ws/stream", "/api/v1/events");
-          setHttpEndpoint(httpUrl);
-          if (typeof window !== "undefined") localStorage.setItem("tap8583_server_url", url);
+        serverUrlOverride={serverUrlOverride}
+        defaultServerUrl={serverUrl && !serverUrlOverride ? serverUrl : ""}
+        onSave={(key, urlOverride) => {
+          saveApiKey(key);
+          saveServerUrlOverride(urlOverride);
+          const normalisedOverride = urlOverride ? normaliseServerUrl(urlOverride) : "";
+          setApiKey(key.trim());
+          setServerUrlOverride(normalisedOverride);
+          setServerUrl(resolveServerUrl(normalisedOverride));
+          setConnectNonce((n) => n + 1);
+          if (!key.trim()) setConnectionState("NO_KEY");
         }}
       />
     </div>

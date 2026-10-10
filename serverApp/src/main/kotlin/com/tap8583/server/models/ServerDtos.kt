@@ -92,7 +92,23 @@ data class WebSocketMessage(
     val type: String, // "INIT_SNAPSHOT", "TRANSACTION_UPDATED", "DEVICE_LIST", "CLEAR"
     val transaction: DecodedTransactionDto? = null,
     val transactions: List<DecodedTransactionDto>? = null,
-    val devices: List<DeviceSummaryDto>? = null
+    val devices: List<DeviceSummaryDto>? = null,
+    /** For CLEAR: the device that was cleared, or null when all devices were. */
+    val serial: String? = null
+)
+
+@Serializable
+data class IngestResponse(
+    val status: String,
+    val eventsIngested: Int
+)
+
+/** First frame a dashboard client must send on /ws/stream. */
+@Serializable
+data class WsAuthMessage(
+    val type: String,
+    val apiKey: String? = null,
+    val serial: String? = null
 )
 
 // ---------------------------------------------------------------------------

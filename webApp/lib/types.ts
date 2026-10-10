@@ -91,4 +91,6 @@ export interface WebSocketMessage {
   transaction?: DecodedTransactionDto;
   transactions?: DecodedTransactionDto[];
   devices?: DeviceSummaryDto[];
+  /** For CLEAR: the device that was cleared, or absent when all devices were. */
+  serial?: string | null;
 }

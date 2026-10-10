@@ -1,0 +1,54 @@
+# Tap8583 on a single Hetzner Cloud server.
+#
+#   cd deploy && cp .env.example .env   # fill in the values
+#   docker compose up -d
+#
+# Caddy terminates HTTPS (automatic Let's Encrypt certificates) and routes
+# /api, /ws and /health to the Ktor server and everything else to the
+# dashboard, so the browser talks to a single origin.
+
+services:
+  server:
+    image: ${SERVER_IMAGE:-ghcr.io/henryudorji/tap8583-server:latest}
+    build:
+      context: ..
+      dockerfile: serverApp/Dockerfile
+    restart: unless-stopped
+    environment:
+      TAP8583_VIEWER_KEY: ${TAP8583_VIEWER_KEY:?Set TAP8583_VIEWER_KEY in deploy/.env}
+      TAP8583_INGEST_KEY: ${TAP8583_INGEST_KEY:?Set TAP8583_INGEST_KEY in deploy/.env}
+      TAP8583_ALLOWED_ORIGINS: https://${TAP8583_DOMAIN:?Set TAP8583_DOMAIN in deploy/.env}
+      TAP8583_MASK_CARD_DATA: ${TAP8583_MASK_CARD_DATA:-true}
+      JAVA_OPTS: ${SERVER_JAVA_OPTS:--Xmx512m}
+    expose:
+      - "8080"
+
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/henryudorji/tap8583-web:latest}
+    build:
+      context: ../webApp
+    restart: unless-stopped
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      - server
+      - web
+    environment:
+      TAP8583_DOMAIN: ${TAP8583_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

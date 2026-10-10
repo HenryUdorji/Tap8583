@@ -1,5 +1,7 @@
 # ==========================================
-# Tap8583 Server Dockerfile (Render / Cloud)
+# Tap8583 Ingestion Server (Ktor)
+# Build from the repository root:
+#   docker build -f serverApp/Dockerfile -t tap8583-server .
 # ==========================================
 
 # 1. Build Stage
@@ -21,12 +23,16 @@ RUN ./gradlew :serverApp:installDist --no-daemon -Dorg.gradle.java.installations
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin tap8583
+
 # Copy installed application distribution
 COPY --from=build /app/serverApp/build/install/serverApp ./
 
+USER tap8583
 EXPOSE 8080
 ENV PORT=8080
 ENV HOST=0.0.0.0
-ENV TAP8583_API_KEY=tap_live_secret
+# Keys are runtime secrets: pass TAP8583_VIEWER_KEY / TAP8583_INGEST_KEY with
+# `docker run -e` or deploy/.env. Never bake them into the image.
 
 CMD ["./bin/serverApp"]

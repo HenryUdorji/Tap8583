@@ -35,6 +35,13 @@ object JposXmlParser {
     private val saxParserFactory: SAXParserFactory = SAXParserFactory.newInstance().also {
         it.isNamespaceAware = false
         it.isValidating = false
+        // Input arrives over the network: refuse DOCTYPEs and external entities
+        // (XXE file disclosure / SSRF, "billion laughs" entity expansion).
+        it.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        it.setFeature("http://xml.org/sax/features/external-general-entities", false)
+        it.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        it.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+        it.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true)
     }
 
     /**
