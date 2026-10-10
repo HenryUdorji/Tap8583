@@ -10,8 +10,7 @@ The library is on Maven Central. In `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    // debugImplementation keeps the listener out of release builds
-    debugImplementation("dev.sarari:tap8583-listener:1.0.0")
+    implementation("dev.sarari:tap8583-listener:1.0.0")
 }
 ```
 
@@ -19,32 +18,41 @@ It expects jPOS and the Kotlin standard library to be on the app's classpath alr
 
 ---
 
-## ⚡ 2 — One-Line Setup in Android Application
+## ⚡ 2 — Connect it to your jPOS channel
 
 You do **not** need to find local IP addresses, run ADB port forwards, or modify network configurations.
 
-In your `Application.onCreate()`:
+jPOS only hands a channel's events to the listeners of the logger that channel was given (`channel.setLogger(...)`). A channel without a logger logs nothing, so the listener has to sit on the channel's logger.
+
+Create the listener once, for example in `Application.onCreate()`:
 
 ```kotlin
 import dev.sarari.tap8583.listener.VisualizerLogListener
 
-class PosApplication : Application() {
-    override fun onCreate() {
-        super.onCreate()
+// Debug builds only, so production traffic never leaves the terminal
+val tap8583 = if (BuildConfig.DEBUG) VisualizerLogListener(
+    apiKey = "YOUR_INGEST_KEY",
+    endpoint = "https://your-domain/api/v1/events"
+) else null
+```
 
-        // Auto-detects the hardware serial and streams events to your Tap8583 server
-        VisualizerLogListener.install(
-            apiKey = "YOUR_INGEST_KEY",
-            endpoint = "https://your-domain/api/v1/events"
-        )
-    }
+Then, where you create your channel:
+
+```kotlin
+tap8583?.let { listener ->
+    channel.setLogger(org.jpos.util.Logger().apply { addListener(listener) }, "channel")
 }
 ```
 
-> **What happens automatically:**
-> 1. `listenerLib` auto-detects your POS hardware serial number (`Build.getSerial()`, `Settings.Secure.ANDROID_ID`, or PAX/Telpo/Nexgo system properties).
-> 2. Auto-registers as a listener with jPOS `Logger.getLogger("Q2")`.
-> 3. Dispatches transaction events via a non-blocking background queue over HTTPS.
+If your channel already has a logger, call `addListener(tap8583)` on that logger once instead. Create the listener only once: each instance runs its own background sender.
+
+From the next library release you can write `tap8583.attach(channel)`, which does the above (it reuses the channel's logger or gives it one, and never adds the listener twice).
+
+> **About `VisualizerLogListener.install(...)`:** it only helps apps that run jPOS through Q2 with a logger named `"Q2"`. In 1.0.0 it logs "Auto-registered" even when no such logger exists, because jPOS creates an empty `"Q2"` logger that no channel writes to, so nothing is sent. The next release only uses an existing `"Q2"` logger and warns otherwise.
+
+> **What the listener does:**
+> 1. Auto-detects your POS hardware serial number (`Build.getSerial()`, `Settings.Secure.ANDROID_ID`, or PAX/Telpo/Nexgo system properties).
+> 2. Dispatches transaction events via a non-blocking background queue over HTTPS.
 
 ---
 
@@ -70,7 +78,7 @@ class PosApplication : Application() {
 Point the listener at your Hetzner deployment (see `deploy/HETZNER_DEPLOYMENT.md`):
 
 ```kotlin
-VisualizerLogListener.install(
+VisualizerLogListener(
     apiKey = "YOUR_INGEST_KEY",
     endpoint = "https://your-domain/api/v1/events",
     deviceSerial = "CUSTOM-SERIAL-TAG" // Optional custom tag

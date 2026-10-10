@@ -103,7 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Android Quick Start (listenerLib):
             </div>
             <div className="text-slate-300 text-[11px] bg-black/40 p-2 rounded select-text">
-              VisualizerLogListener.install(apiKey = &quot;YOUR_INGEST_KEY&quot;, endpoint = &quot;{(localUrl || defaultServerUrl || "https://your-server")}/api/v1/events&quot;)
+              channel.setLogger(Logger().apply {"{"} addListener(VisualizerLogListener(apiKey = &quot;YOUR_INGEST_KEY&quot;, endpoint = &quot;{(localUrl || defaultServerUrl || "https://your-server")}/api/v1/events&quot;)) {"}"}, &quot;channel&quot;)
             </div>
           </div>
         </div>

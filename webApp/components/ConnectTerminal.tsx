@@ -8,12 +8,19 @@ import { CodeBlock, CopyButton } from "./CopyButton";
 
 export function installSnippets(serverUrl: string, key: string) {
   return {
-    gradle: `debugImplementation("dev.sarari:tap8583-listener:${LISTENER_VERSION}")`,
-    kotlin: `// In Application.onCreate(), debug builds only
-VisualizerLogListener.install(
+    gradle: `implementation("dev.sarari:tap8583-listener:${LISTENER_VERSION}")`,
+    kotlin: `// Create it once, e.g. in Application.onCreate(). Debug builds only,
+// so production traffic never leaves the terminal.
+val tap8583 = if (BuildConfig.DEBUG) VisualizerLogListener(
     apiKey = "${key}",
     endpoint = "${serverUrl}/api/v1/events"
-)`,
+) else null`,
+    channel: `// Where you create your jPOS channel. jPOS only sends events to the
+// logger the channel was given. If it already has one, call
+// addListener(tap8583) on that logger instead.
+tap8583?.let { listener ->
+    channel.setLogger(org.jpos.util.Logger().apply { addListener(listener) }, "channel")
+}`,
   };
 }
 
@@ -176,7 +183,8 @@ export const ConnectTerminal: React.FC<ConnectTerminalProps> = ({
         </div>
       </div>
       <CodeBlock label="1. Add the listener (app/build.gradle.kts)" code={snippets.gradle} />
-      <CodeBlock label="2. Start it in your debug build" code={snippets.kotlin} />
+      <CodeBlock label="2. Create the listener" code={snippets.kotlin} />
+      <CodeBlock label="3. Connect it to your jPOS channel" code={snippets.channel} />
 
       {waitForFirstEvent &&
         (connectedSerial ? (

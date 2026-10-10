@@ -42,6 +42,13 @@ dependencies {
 
     // OkHttp for HTTPS connection pooling and streaming
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    testImplementation(kotlin("test"))
+    testImplementation("org.jpos:jpos:2.1.9")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks.jar {

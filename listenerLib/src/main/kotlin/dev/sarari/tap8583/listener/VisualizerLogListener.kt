@@ -9,6 +9,9 @@ import org.jpos.core.Configuration
 import org.jpos.iso.ISOMsg
 import org.jpos.util.LogEvent
 import org.jpos.util.LogListener
+import org.jpos.util.LogSource
+import org.jpos.util.NameRegistrar
+import org.jpos.util.Logger as JposLogger
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.time.Duration
@@ -30,13 +33,17 @@ import java.util.logging.Logger
  * Designed for seamless QA & Developer workflows on Android POS terminals with
  * ZERO manual local IP/port configuration.
  *
- * ## Quick start (one-line setup in Android `Application.onCreate()`):
+ * ## Quick start
+ * jPOS only hands events to the listeners of the logger a channel was given,
+ * so attach the listener to the channel (or MUX, or any other [LogSource]):
  * ```kotlin
- * VisualizerLogListener.install(
+ * val tap8583 = VisualizerLogListener(
  *     apiKey = "YOUR_INGEST_KEY",
  *     endpoint = "https://your-tap8583-host/api/v1/events"
  * )
+ * tap8583.attach(channel)
  * ```
+ * Apps that run jPOS through Q2 with a logger named "Q2" can call [install] instead.
  */
 class VisualizerLogListener @JvmOverloads constructor(
     private var apiKey: String = "",
@@ -59,8 +66,9 @@ class VisualizerLogListener @JvmOverloads constructor(
         private var globalInstance: VisualizerLogListener? = null
 
         /**
-         * Convenience one-line installer for Android apps.
-         * Auto-resolves hardware serial and hooks into jPOS Q2 Logger if available.
+         * Creates a listener and adds it to the jPOS logger named "Q2", if the app
+         * already has one (Q2 deployments do). Channels set up in code usually log
+         * to a logger of their own, so also call [attach] with each channel.
          */
         @JvmStatic
         @JvmOverloads
@@ -76,19 +84,51 @@ class VisualizerLogListener @JvmOverloads constructor(
             )
             globalInstance = listener
 
-            // Attempt auto-registration with jPOS Logger if present on classpath
-            try {
-                val q2LoggerClass = Class.forName("org.jpos.util.Logger")
-                val getLoggerMethod = q2LoggerClass.getMethod("getLogger", String::class.java)
-                val loggerInstance = getLoggerMethod.invoke(null, "Q2")
-                val addListenerMethod = q2LoggerClass.getMethod("addListener", LogListener::class.java)
-                addListenerMethod.invoke(loggerInstance, listener)
-                log.info("✓ Auto-registered VisualizerLogListener with jPOS Q2 logger")
+            // Logger.getLogger("Q2") would create an empty logger nobody writes to,
+            // so only use one that already exists.
+            val q2Logger = try {
+                NameRegistrar.getIfExists<JposLogger>(JposLogger.NRPREFIX + "Q2")
             } catch (t: Throwable) {
-                log.info("jPOS Logger auto-registration skipped (register manually via Logger.addListener or XML): ${t.message}")
+                null
+            }
+            if (q2Logger != null) {
+                listener.attachTo(q2Logger)
+                log.info("✓ Added VisualizerLogListener to the jPOS \"Q2\" logger")
+            } else {
+                log.warning(
+                    "No jPOS \"Q2\" logger found, so nothing is attached yet. " +
+                        "Call attach(channel) with your channel to start sending events."
+                )
             }
 
             return listener
+        }
+    }
+
+    private val attachedLoggers = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<JposLogger, Boolean>())
+
+    /**
+     * Sends [source]'s events (a channel, MUX or anything else that logs) to Tap8583.
+     * Uses the logger it already has, or gives it one when it has none, since a
+     * channel without a logger logs nothing.
+     */
+    @JvmOverloads
+    fun attach(source: LogSource, realm: String? = null): VisualizerLogListener {
+        val existing = source.logger
+        if (existing != null) {
+            attachTo(existing)
+        } else {
+            val logger = JposLogger().apply { setName("tap8583") }
+            attachTo(logger)
+            source.setLogger(logger, realm ?: source.realm ?: source.javaClass.simpleName.lowercase())
+        }
+        log.info("✓ Sending events from ${source.realm ?: source.javaClass.simpleName} to Tap8583")
+        return this
+    }
+
+    private fun attachTo(logger: JposLogger) {
+        synchronized(attachedLoggers) {
+            if (attachedLoggers.add(logger)) logger.addListener(this)
         }
     }
 
