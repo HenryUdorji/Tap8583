@@ -104,3 +104,29 @@ export function getCategoryBadgeClass(category: string): { bg: string; text: str
       return { bg: "bg-zinc-500/10", text: "text-zinc-400", border: "border-zinc-500/30", bar: "bg-zinc-500" };
   }
 }
+
+/**
+ * What to check when a response code comes back, for the summary card.
+ * These are common causes seen when integrating POS terminals, not issuer
+ * statements: the real reason can differ per switch and issuer.
+ */
+export const RESPONSE_HINTS: Record<string, string> = {
+  "03": "The merchant or terminal isn't set up on the host. Check DE41/DE42 against the terminal profile from the parameter download.",
+  "05": "Generic issuer decline. Try another test card; if every card fails, check the terminal and card profiles.",
+  "06": "Generic host error. On NIBSS this often means a key or MAC problem: redo the key exchange and check DE128.",
+  "12": "The host doesn't allow this transaction type. Check the DE3 processing code and MTI combination.",
+  "13": "Amount rejected. Check DE4 is right-aligned, zero-padded minor units and not zero.",
+  "14": "Card number rejected. Check DE2 matches the PAN in Track 2 (DE35).",
+  "25": "The host couldn't find the original transaction. For a reversal, check DE90 and the original STAN.",
+  "30": "Format error. A field's length or encoding doesn't match the host spec; compare against the packager.",
+  "51": "Real decline: the account doesn't have enough funds. Use a funded test card.",
+  "55": "Wrong PIN, or the PIN block was encrypted with the wrong key. Check the PIN key and DE52 format.",
+  "57": "The card isn't allowed to do this transaction type.",
+  "58": "The terminal isn't allowed to do this transaction type. Check the terminal profile.",
+  "63": "Security violation, usually a MAC mismatch. Redo the key exchange and check DE128.",
+  "68": "The host answered too late. Send a reversal (0420) for this STAN.",
+  "75": "Too many wrong PINs; the card is locked for PIN transactions.",
+  "91": "The issuer or switch is unreachable. Retry later and send a reversal if the outcome is unknown.",
+  "92": "The host can't route this card. Check the BIN and DE32 acquiring institution.",
+  "96": "Error on the switch side. Often fixed by a fresh key exchange; otherwise retry later.",
+};

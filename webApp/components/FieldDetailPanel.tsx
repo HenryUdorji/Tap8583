@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check, Copy, FileText, Info, Layers, Tag } from "lucide-react";
+import { Check, Copy, FileText, Info, Layers, Tag, X } from "lucide-react";
 import { DecodedFieldDto } from "@/lib/types";
 import {
   CURRENCY_CODES,
@@ -13,9 +13,11 @@ import {
 
 interface FieldDetailPanelProps {
   field: DecodedFieldDto | null;
+  /** When set (drawer mode), a close button is shown in the header. */
+  onClose?: () => void;
 }
 
-export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field }) => {
+export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field, onClose }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = (text: string) => {
@@ -26,7 +28,7 @@ export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field }) => 
 
   if (!field) {
     return (
-      <div className="w-80 lg:w-96 flex flex-col items-center justify-center bg-panel p-6 text-center text-slate-500 select-none">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-panel border-l border-white/10 p-6 text-center text-slate-500 select-none">
         <Info className="w-8 h-8 text-slate-700 mb-2" />
         <div className="text-xs font-semibold text-slate-400">Field Deep Dive</div>
         <div className="text-[11px] text-slate-500 mt-1">
@@ -46,7 +48,7 @@ export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field }) => 
         .join(" ");
 
   return (
-    <div className="w-80 lg:w-96 flex flex-col h-full bg-panel border-l border-white/10 overflow-y-auto select-text font-mono text-xs">
+    <div className="w-full flex flex-col h-full bg-panel border-l border-white/10 overflow-y-auto select-text font-mono text-xs">
       {/* Panel Header */}
       <div className="px-4 py-3 bg-slate-900/90 border-b border-white/10 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-2">
@@ -64,6 +66,15 @@ export const FieldDetailPanel: React.FC<FieldDetailPanelProps> = ({ field }) => 
         >
           {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
         </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Close field details"
+            className="ml-2 p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       <div className="p-4 space-y-4">

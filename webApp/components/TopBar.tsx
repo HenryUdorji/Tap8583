@@ -2,18 +2,14 @@
 
 import React from "react";
 import {
-  Activity,
   CreditCard,
   Download,
   Filter,
   Layers,
-  RefreshCw,
   Search,
   Settings,
   Sparkles,
   Trash2,
-  Wifi,
-  WifiOff
 } from "lucide-react";
 import { DeviceSummaryDto } from "@/lib/types";
 import { ConnectionState } from "@/lib/connection";
@@ -43,6 +39,15 @@ interface TopBarProps {
   packetCount: number;
 }
 
+const MESSAGE_FILTERS: { id: string; label: string; mti?: string }[] = [
+  { id: "ALL", label: "All" },
+  { id: "0200", label: "Financial", mti: "0200" },
+  { id: "0100", label: "Auth", mti: "0100" },
+  { id: "0400", label: "Reversal", mti: "0400" },
+  { id: "0800", label: "Network", mti: "0800" },
+  { id: "DECLINED", label: "Declined" },
+];
+
 export const TopBar: React.FC<TopBarProps> = ({
   connectionState,
   selectedSerial,
@@ -61,30 +66,30 @@ export const TopBar: React.FC<TopBarProps> = ({
   const isConnected = connectionState === "LIVE";
 
   return (
-    <header className="h-14 border-b border-white/10 bg-raised/90 backdrop-blur-md px-4 flex items-center justify-between gap-4 select-none z-20">
-      {/* Left Branding & Device Selector */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 pr-3 border-r border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
-            <CreditCard className="w-4 h-4 text-on-accent" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 font-bold tracking-tight text-white text-sm">
-              Tap8583
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 font-mono font-medium">
-                v2.0 Cloud
-              </span>
-            </div>
-          </div>
+    <header className="min-h-14 border-b border-white/10 bg-raised/90 backdrop-blur-md px-3 sm:px-4 py-2 lg:py-0 lg:h-14 flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-2 select-none z-20">
+      {/* Branding */}
+      <div className="order-1 flex items-center gap-2 lg:pr-3 lg:border-r border-white/10 flex-shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+          <CreditCard className="w-4 h-4 text-on-accent" />
         </div>
+        <div className="hidden min-[400px]:flex items-center gap-1.5 font-bold tracking-tight text-white text-sm">
+          Tap8583
+          <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 font-mono font-medium">
+            v2.0 Cloud
+          </span>
+        </div>
+      </div>
 
+      {/* Device, message filter and search: a second row below lg */}
+      <div className="order-3 lg:order-2 w-full lg:w-auto lg:flex-1 flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-0">
         {/* Device Selector */}
-        <div className="flex items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5">
-          <Layers className="w-3.5 h-3.5 text-slate-400" />
+        <div className="flex items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-initial">
+          <Layers className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
           <select
+            aria-label="Device"
             value={selectedSerial}
             onChange={(e) => onSelectSerial(e.target.value)}
-            className="bg-transparent text-xs text-slate-200 font-mono outline-none cursor-pointer pr-1"
+            className="bg-transparent text-xs text-slate-200 font-mono outline-none cursor-pointer pr-1 min-w-0 w-full"
           >
             <option value="ALL" className="bg-slate-900 text-slate-200">
               All Devices ({devices.length} active)
@@ -97,19 +102,14 @@ export const TopBar: React.FC<TopBarProps> = ({
           </select>
         </div>
 
-        {/* Message Filter Tabs */}
-        <div className="hidden lg:flex items-center bg-slate-900/70 p-1 rounded-lg border border-white/5 text-xs font-mono">
-          {[
-            { id: "ALL", label: "All" },
-            { id: "0200", label: "Financial (0200)" },
-            { id: "0100", label: "Auth (0100)" },
-            { id: "0400", label: "Reversal (0400)" },
-            { id: "0800", label: "Network (0800)" },
-            { id: "DECLINED", label: "Declined" },
-          ].map((tab) => (
+        {/* Message Filter: tabs on wide screens, a select otherwise */}
+        <div className="hidden xl:flex items-center bg-slate-900/70 p-1 rounded-lg border border-white/5 text-xs font-mono flex-shrink-0">
+          {MESSAGE_FILTERS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onMessageFilterChange(tab.id)}
+              aria-pressed={messageFilter === tab.id}
+              title={tab.mti ? `MTI ${tab.mti} and its response` : undefined}
               className={`px-2.5 py-1 rounded transition-all ${
                 messageFilter === tab.id
                   ? "bg-sky-500/20 text-sky-300 font-medium shadow-sm"
@@ -120,30 +120,47 @@ export const TopBar: React.FC<TopBarProps> = ({
             </button>
           ))}
         </div>
-      </div>
-
-      {/* Center Search */}
-      <div className="flex-1 max-w-md relative">
-        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search STAN, PAN, Amount, RRN, Response code..."
-          className="w-full bg-slate-900/80 border border-white/10 focus:border-sky-500/50 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-200 placeholder-slate-500 font-mono outline-none transition-all"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => onSearchChange("")}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
+        <div className="flex xl:hidden items-center gap-2 bg-slate-900/80 border border-white/10 rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-initial">
+          <Filter className="w-3.5 h-3.5 text-slate-400" />
+          <select
+            aria-label="Message type"
+            value={messageFilter}
+            onChange={(e) => onMessageFilterChange(e.target.value)}
+            className="bg-transparent text-xs text-slate-200 font-mono outline-none cursor-pointer pr-1 min-w-0 w-full"
           >
-            ×
-          </button>
-        )}
+            {MESSAGE_FILTERS.map((tab) => (
+              <option key={tab.id} value={tab.id} className="bg-slate-900 text-slate-200">
+                {tab.mti ? `${tab.label} (${tab.mti})` : tab.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Search */}
+        <div className="basis-full sm:basis-auto flex-1 min-w-[10rem] lg:max-w-md relative">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            aria-label="Search transactions"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search STAN, PAN, amount, RRN, code…"
+            className="w-full bg-slate-900/80 border border-white/10 focus:border-sky-500/50 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-200 placeholder-slate-500 font-mono outline-none transition-all"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => onSearchChange("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Right Controls & Status */}
-      <div className="flex items-center gap-2">
+      <div className="order-2 lg:order-3 ml-auto lg:ml-0 flex items-center gap-1 sm:gap-2 flex-shrink-0">
         {/* Quick Simulate Button */}
         <button
           onClick={onSimulate}
@@ -158,6 +175,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={onClear}
           title="Clear transactions"
+          aria-label="Clear transactions"
           className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-white/10 text-slate-400 hover:text-slate-200 text-xs transition-all"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -167,6 +185,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={onExport}
           title="Export transactions as JSON"
+          aria-label="Export transactions as JSON"
           className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-white/10 text-slate-400 hover:text-slate-200 text-xs transition-all"
         >
           <Download className="w-3.5 h-3.5" />
@@ -178,6 +197,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <button
           onClick={onOpenSettings}
           title="Settings & Connection"
+          aria-label="Settings and connection"
           className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-white/10 text-slate-400 hover:text-slate-200 text-xs transition-all"
         >
           <Settings className="w-3.5 h-3.5" />

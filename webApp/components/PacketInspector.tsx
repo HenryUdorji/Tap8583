@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import {
   ArrowDownLeft,
+  ArrowLeft,
   ArrowUpRight,
   ChevronDown,
   ChevronRight,
@@ -21,11 +22,14 @@ import { getCategoryBadgeClass } from "@/lib/referenceTables";
 import { EmvTlvTree } from "./EmvTlvTree";
 import { DiffViewer } from "./DiffViewer";
 import { RawXmlViewer } from "./RawXmlViewer";
+import { TransactionSummary } from "./TransactionSummary";
 
 interface PacketInspectorProps {
   transaction: DecodedTransactionDto | null;
   selectedField: DecodedFieldDto | null;
-  onSelectField: (field: DecodedFieldDto) => void;
+  onSelectField: (field: DecodedFieldDto | null) => void;
+  /** Shown on small screens, where the inspector replaces the timeline. */
+  onBack?: () => void;
 }
 
 type TabType = "REQUEST" | "RESPONSE" | "DIFF" | "RAW";
@@ -34,8 +38,11 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
   transaction,
   selectedField,
   onSelectField,
+  onBack,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>("REQUEST");
+  // The parent remounts this component per transaction (key), so tab and
+  // reveal state never carry over to the next transaction.
+  const [activeTab, setActiveTab] = useState<TabType>(transaction?.request ? "REQUEST" : "RESPONSE");
   const [revealedFields, setRevealedFields] = useState<Record<number, boolean>>({});
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
 
@@ -54,6 +61,12 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
   const req = transaction.request;
   const resp = transaction.response;
   const currentPacket = activeTab === "RESPONSE" ? resp : req;
+
+  // A field selected on one tab doesn't belong to the next one.
+  const selectTab = (tab: TabType) => {
+    setActiveTab(tab);
+    onSelectField(null);
+  };
 
   const toggleCategory = (cat: string) => {
     setCollapsedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }));
@@ -79,40 +92,50 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-app overflow-hidden select-none border-r border-white/10">
       {/* Top Packet Header Strip */}
-      <div className="px-4 py-2.5 bg-slate-900/90 border-b border-white/10 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {/* Tab Selector */}
-          <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-white/10 font-mono text-xs">
+      <div className="px-4 py-2.5 bg-slate-900/90 border-b border-white/10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {onBack && (
             <button
-              onClick={() => setActiveTab("REQUEST")}
+              type="button"
+              onClick={onBack}
+              aria-label="Back to transactions"
+              className="lg:hidden p-1.5 rounded-lg bg-slate-800/80 border border-white/10 text-slate-300 hover:text-slate-100"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+          {/* Tab Selector */}
+          <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-white/10 font-mono text-xs min-w-0 overflow-x-auto">
+            <button
+              onClick={() => selectTab("REQUEST")}
               disabled={!req}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded transition-all ${
+              className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded whitespace-nowrap transition-all ${
                 activeTab === "REQUEST"
                   ? "bg-sky-500/20 text-sky-400 font-semibold shadow-sm"
                   : "text-slate-400 hover:text-slate-200 disabled:opacity-30"
               }`}
             >
               <ArrowUpRight className="w-3.5 h-3.5" />
-              <span>Request ({req?.mti?.raw || "0200"})</span>
+              <span>Request<span className="hidden sm:inline"> ({req?.mti?.raw || "0200"})</span></span>
             </button>
 
             <button
-              onClick={() => setActiveTab("RESPONSE")}
+              onClick={() => selectTab("RESPONSE")}
               disabled={!resp}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded transition-all ${
+              className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded whitespace-nowrap transition-all ${
                 activeTab === "RESPONSE"
                   ? "bg-emerald-500/20 text-emerald-400 font-semibold shadow-sm"
                   : "text-slate-400 hover:text-slate-200 disabled:opacity-30"
               }`}
             >
               <ArrowDownLeft className="w-3.5 h-3.5" />
-              <span>Response ({resp?.mti?.raw || "Pending"})</span>
+              <span>Response<span className="hidden sm:inline"> ({resp?.mti?.raw || "Pending"})</span></span>
             </button>
 
             <button
-              onClick={() => setActiveTab("DIFF")}
+              onClick={() => selectTab("DIFF")}
               disabled={!req && !resp}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded transition-all ${
+              className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded whitespace-nowrap transition-all ${
                 activeTab === "DIFF"
                   ? "bg-purple-500/20 text-purple-400 font-semibold shadow-sm"
                   : "text-slate-400 hover:text-slate-200 disabled:opacity-30"
@@ -123,15 +146,15 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab("RAW")}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded transition-all ${
+              onClick={() => selectTab("RAW")}
+              className={`flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded whitespace-nowrap transition-all ${
                 activeTab === "RAW"
                   ? "bg-amber-500/20 text-amber-400 font-semibold shadow-sm"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
               <Code className="w-3.5 h-3.5" />
-              <span>Raw XML</span>
+              <span>Raw<span className="hidden sm:inline"> XML</span></span>
             </button>
           </div>
         </div>
@@ -154,6 +177,8 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
           </div>
         )}
       </div>
+
+      <TransactionSummary transaction={transaction} />
 
       {/* Main Content Area based on Tab */}
       <div className="flex-1 overflow-y-auto">
