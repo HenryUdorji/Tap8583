@@ -16,9 +16,18 @@ import {
   WifiOff
 } from "lucide-react";
 import { DeviceSummaryDto } from "@/lib/types";
+import { ConnectionState } from "@/lib/connection";
+
+const CONNECTION_LABELS: Record<ConnectionState, string> = {
+  LIVE: "LIVE",
+  CONNECTING: "CONNECTING",
+  OFFLINE: "OFFLINE · RETRYING",
+  UNAUTHORIZED: "INVALID KEY",
+  NO_KEY: "NO KEY",
+};
 
 interface TopBarProps {
-  isConnected: boolean;
+  connectionState: ConnectionState;
   selectedSerial: string;
   onSelectSerial: (serial: string) => void;
   devices: DeviceSummaryDto[];
@@ -34,7 +43,7 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
-  isConnected,
+  connectionState,
   selectedSerial,
   onSelectSerial,
   devices,
@@ -48,6 +57,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onExport,
   packetCount,
 }) => {
+  const isConnected = connectionState === "LIVE";
+
   return (
     <header className="h-14 border-b border-white/10 bg-[#0F172A]/90 backdrop-blur-md px-4 flex items-center justify-between gap-4 select-none z-20">
       {/* Left Branding & Device Selector */}
@@ -171,6 +182,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         {/* Live Status Pill */}
         <div
+          title={connectionState === "UNAUTHORIZED" || connectionState === "NO_KEY" ? "Open settings to enter your API key" : undefined}
           className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono border ${
             isConnected
               ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
@@ -188,7 +200,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             ></span>
           </span>
           <span className="hidden sm:inline font-medium">
-            {isConnected ? "LIVE CLOUD" : "OFFLINE"}
+            {CONNECTION_LABELS[connectionState]}
           </span>
           <span className="px-1.5 py-0.2 rounded bg-black/30 text-[10px] text-slate-300">
             {packetCount}
