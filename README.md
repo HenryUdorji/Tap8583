@@ -19,6 +19,10 @@ It features a high-performance **Kotlin / Ktor Ingestion Server** and a sleek **
 * **🌲 Hierarchical EMV / BER-TLV Tree**: Recursively parses Field 55 ICC payloads with byte offsets, AID scheme recognition (Verve, Visa, Mastercard), and bit-by-bit Terminal Verification Results (TVR Tag 95) security checks.
 * **🔍 Request / Response Diff Viewer**: Side-by-side comparison highlighting new, matching, and modified fields.
 * **👁️ Syntax-Highlighted Raw XML Stream**: Real-time syntax-highlighted packet inspection with one-click copy.
+* **📋 Paste or Upload a Log**: Decode jPOS logger output, Logcat lines or listener events without a terminal. Requests and responses are paired, card data is masked, and nothing is stored.
+* **🔌 Channel Errors Next to the Transaction**: Read timeouts, host disconnects and failed connects reported by jPOS show on the transaction they affected.
+* **↩️ Reversal Linking**: 0420/0400 reversals link to the transaction they reverse (via DE90 or the STAN), in both directions.
+* **📊 Stats & Alerts**: Approval rate, average and p95 round trip, and pop-up alerts for timeouts, host errors, slow responses and integration-type declines.
 * **🔒 Key-Protected Access & Server-Side Masking**: Terminals send with a write-only ingest key; the dashboard needs a separate viewer key. PAN, Track 2, expiry, PIN block and the card data inside DE55 are masked on the server before anything is stored or shown.
 
 ---

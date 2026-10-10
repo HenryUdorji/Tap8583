@@ -86,11 +86,34 @@ export interface DeviceSummaryDto {
   transactionCount: number;
 }
 
+/** A timeout, disconnect, failed connect or exception reported by a terminal's jPOS channel. */
+export interface ChannelEventDto {
+  id: string;
+  serial?: string | null;
+  realm: string;
+  capturedAt: string;
+  tag: string;
+  kind: "io-timeout" | "peer-disconnect" | "connect-failed" | "exception" | string;
+  message: string;
+}
+
 export interface WebSocketMessage {
-  type: "INIT_SNAPSHOT" | "TRANSACTION_UPDATED" | "DEVICE_LIST" | "CLEAR";
+  type: "INIT_SNAPSHOT" | "TRANSACTION_UPDATED" | "CHANNEL_EVENT" | "DEVICE_LIST" | "CLEAR";
   transaction?: DecodedTransactionDto;
   transactions?: DecodedTransactionDto[];
+  channelEvent?: ChannelEventDto;
+  channelEvents?: ChannelEventDto[];
   devices?: DeviceSummaryDto[];
   /** For CLEAR: the device that was cleared, or absent when all devices were. */
   serial?: string | null;
+}
+
+/** Response of POST /api/v1/decode for a pasted or uploaded log. */
+export interface DecodeLogResponse {
+  /** In log order, oldest first. */
+  transactions: DecodedTransactionDto[];
+  channelEvents: ChannelEventDto[];
+  eventsFound: number;
+  errors: string[];
+  truncated: boolean;
 }

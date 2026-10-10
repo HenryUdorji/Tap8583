@@ -4,6 +4,7 @@ import React from "react";
 import {
   CreditCard,
   Download,
+  FileText,
   Filter,
   Layers,
   Search,
@@ -36,6 +37,7 @@ interface TopBarProps {
   onClear: () => void;
   onOpenSettings: () => void;
   onExport: () => void;
+  onOpenDecodeLog: () => void;
   packetCount: number;
 }
 
@@ -61,6 +63,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onClear,
   onOpenSettings,
   onExport,
+  onOpenDecodeLog,
   packetCount,
 }) => {
   const isConnected = connectionState === "LIVE";
@@ -169,6 +172,16 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Simulate Txn</span>
+        </button>
+
+        {/* Paste / upload a log */}
+        <button
+          onClick={onOpenDecodeLog}
+          title="Decode a pasted or uploaded jPOS log"
+          aria-label="Decode a jPOS log"
+          className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-white/10 text-slate-400 hover:text-slate-200 text-xs transition-all"
+        >
+          <FileText className="w-3.5 h-3.5" />
         </button>
 
         {/* Clear Button */}

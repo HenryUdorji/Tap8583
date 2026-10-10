@@ -58,6 +58,14 @@ object CardDataMasker {
         return event.copy(fields = maskedFields, rawXml = xml)
     }
 
+    private val PAN_LIKE = Regex("""(?<![0-9])[0-9]{13,19}(?![0-9])""")
+
+    /** Masks card-number-like digit runs (13–19 digits) in free text such as error messages. */
+    fun maskText(text: String): String = text.replace(PAN_LIKE) { maskPan(it.value) }
+
+    /** Masks free text in a channel error before it is stored or shown. */
+    fun mask(event: ChannelErrorEvent): ChannelErrorEvent = event.copy(message = maskText(event.message))
+
     internal fun maskField(id: Int, value: String): String = when {
         value.isEmpty()              -> value
         id in PAN_FIELDS             -> maskPan(value)

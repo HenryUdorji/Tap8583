@@ -31,12 +31,12 @@ const MTI_CLASSES: Record<string, string> = {
   "8": "Network management",
 };
 
-function field(packet: DecodedPacketDto | null | undefined, n: number): DecodedFieldDto | undefined {
+export function packetField(packet: DecodedPacketDto | null | undefined, n: number): DecodedFieldDto | undefined {
   return packet?.fields.find((f) => f.number === n);
 }
 
 function eitherField(tx: DecodedTransactionDto, n: number): DecodedFieldDto | undefined {
-  return field(tx.request, n) || field(tx.response, n);
+  return packetField(tx.request, n) || packetField(tx.response, n);
 }
 
 /** "₦ 500.00" from DE4 + DE49, using the server's decode when present. */
@@ -70,9 +70,11 @@ export function cardScheme(tx: DecodedTransactionDto): string | null {
 
 export function transactionType(tx: DecodedTransactionDto): string {
   const code = eitherField(tx, 3)?.rawValue?.slice(0, 2).toUpperCase();
-  if (code && PROCESSING_TYPES[code]) return PROCESSING_TYPES[code];
+  const processing = code ? PROCESSING_TYPES[code] : undefined;
   const mti = tx.request?.mti?.raw || tx.response?.mti?.raw || "";
-  return MTI_CLASSES[mti[1]] || "Transaction";
+  // Reversals carry the original's processing code: "Reversal of purchase".
+  if (mti[1] === "4") return processing ? `Reversal of ${processing.toLowerCase()}` : "Reversal";
+  return processing || MTI_CLASSES[mti[1]] || "Transaction";
 }
 
 /** The request MTI, inferred from the response MTI for orphan responses. */
@@ -91,7 +93,7 @@ export interface ResponseInfo {
 
 /** DE39 from the response, or null when there is no response or no DE39. */
 export function responseCode(tx: DecodedTransactionDto): ResponseInfo | null {
-  const raw = field(tx.response, 39)?.rawValue?.trim();
+  const raw = packetField(tx.response, 39)?.rawValue?.trim();
   if (!raw) return null;
   return { code: raw, name: RESPONSE_CODES[raw]?.name || "Unknown response code" };
 }

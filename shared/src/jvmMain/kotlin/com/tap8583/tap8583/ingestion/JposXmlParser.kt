@@ -32,6 +32,9 @@ import javax.xml.parsers.SAXParserFactory
  */
 object JposXmlParser {
 
+    /** Channel error details are cut to this length. */
+    const val MAX_CHANNEL_ERROR_CHARS = 500
+
     private val saxParserFactory: SAXParserFactory = SAXParserFactory.newInstance().also {
         it.isNamespaceAware = false
         it.isValidating = false
@@ -52,7 +55,17 @@ object JposXmlParser {
      * @return      A [RawLogEvent] on success
      * @throws      [ParseException] if the XML is malformed or lacks required attributes
      */
-    fun parse(xml: String, rawXml: String = xml): RawLogEvent {
+    fun parse(xml: String, rawXml: String = xml): RawLogEvent =
+        when (val entry = parseEntry(xml, rawXml)) {
+            is LogEntry.Message -> entry.event
+            is LogEntry.ChannelError -> throw ParseException("No <field> elements found in parsed XML")
+        }
+
+    /**
+     * Parses a <visualizer-event> that holds either an <isomsg> or a
+     * <channel-error kind="…">detail</channel-error>.
+     */
+    fun parseEntry(xml: String, rawXml: String = xml): LogEntry {
         val handler = IsoMsgHandler()
         try {
             val parser = saxParserFactory.newSAXParser()
@@ -62,7 +75,7 @@ object JposXmlParser {
         } catch (e: java.io.IOException) {
             throw ParseException("IO error parsing jPOS XML: ${e.message}", e)
         }
-        return handler.buildEvent(rawXml)
+        return handler.buildEntry(rawXml)
     }
 
     // -----------------------------------------------------------------------
@@ -84,9 +97,14 @@ object JposXmlParser {
         // --- collected fields ---
         private val fields = mutableMapOf<Int, RawField>()
 
+        // --- channel error ---
+        private var channelErrorKind: String? = null
+        private val channelErrorText = StringBuilder()
+
         // ---- element tracking ----
         private var insideVisualizerEvent = false
         private var insideIsoMsg = false
+        private var insideChannelError = false
 
         override fun startElement(
             uri: String?,
@@ -120,6 +138,12 @@ object JposXmlParser {
                     }
                 }
 
+                "channel-error" -> {
+                    if (!insideVisualizerEvent || insideIsoMsg) return
+                    insideChannelError = true
+                    channelErrorKind = attributes.getValue("kind")?.trim()?.ifEmpty { null } ?: "exception"
+                }
+
                 "field" -> {
                     if (!insideIsoMsg) return
                     val idStr    = attributes.getValue("id") ?: return
@@ -135,15 +159,35 @@ object JposXmlParser {
         override fun endElement(uri: String?, localName: String?, qName: String?) {
             when (qName) {
                 "isomsg"             -> insideIsoMsg = false
+                "channel-error"      -> insideChannelError = false
                 "visualizer-event"   -> insideVisualizerEvent = false
             }
         }
 
-        fun buildEvent(rawXml: String): RawLogEvent {
-            if (fields.isEmpty()) {
-                throw ParseException("No <field> elements found in parsed XML")
+        override fun characters(ch: CharArray, start: Int, length: Int) {
+            if (insideChannelError && channelErrorText.length < MAX_CHANNEL_ERROR_CHARS) {
+                channelErrorText.append(ch, start, length)
             }
-            return RawLogEvent(
+        }
+
+        fun buildEntry(rawXml: String): LogEntry {
+            if (fields.isEmpty()) {
+                val kind = channelErrorKind
+                    ?: throw ParseException("No <field> elements found in parsed XML")
+                return LogEntry.ChannelError(
+                    ChannelErrorEvent(
+                        id         = UUID.randomUUID().toString(),
+                        realm      = realm,
+                        capturedAt = capturedAt,
+                        tag        = tag,
+                        kind       = kind,
+                        message    = channelErrorText.toString().replace(Regex("\\s+"), " ").trim()
+                            .take(MAX_CHANNEL_ERROR_CHARS),
+                        serial     = serial
+                    )
+                )
+            }
+            return LogEntry.Message(RawLogEvent(
                 id          = UUID.randomUUID().toString(),
                 realm       = realm,
                 capturedAt  = capturedAt,
@@ -152,7 +196,7 @@ object JposXmlParser {
                 rawXml      = rawXml,
                 fields      = fields.toMap(),
                 serial      = serial
-            )
+            ))
         }
     }
 

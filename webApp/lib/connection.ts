@@ -13,6 +13,7 @@ export const WS_CLOSE_UNAUTHORIZED = 4401;
 
 const KEY_STORAGE = "tap8583_api_key";
 const URL_STORAGE = "tap8583_server_url";
+const ALERTS_STORAGE = "tap8583_alerts";
 
 function readStorage(key: string): string | null {
   try {
@@ -73,4 +74,13 @@ export function apiUrl(serverUrl: string, path: string): string {
 
 export function streamUrl(serverUrl: string): string {
   return `${serverUrl.replace(/^http/, "ws")}/ws/stream`;
+}
+
+/** Pop-up alerts are on unless this browser turned them off. */
+export function loadAlertsEnabled(): boolean {
+  return readStorage(ALERTS_STORAGE) !== "off";
+}
+
+export function saveAlertsEnabled(enabled: boolean) {
+  writeStorage(ALERTS_STORAGE, enabled ? "" : "off");
 }

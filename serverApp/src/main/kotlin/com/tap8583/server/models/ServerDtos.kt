@@ -1,6 +1,7 @@
 package com.tap8583.server.models
 
 import com.tap8583.tap8583.decoder.*
+import com.tap8583.tap8583.ingestion.ChannelErrorEvent
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -87,11 +88,25 @@ data class DeviceSummaryDto(
     val transactionCount: Int
 )
 
+/** A timeout, disconnect, failed connect or exception reported by a terminal's jPOS channel. */
+@Serializable
+data class ChannelEventDto(
+    val id: String,
+    val serial: String? = null,
+    val realm: String,
+    val capturedAt: String,
+    val tag: String,
+    val kind: String,
+    val message: String
+)
+
 @Serializable
 data class WebSocketMessage(
-    val type: String, // "INIT_SNAPSHOT", "TRANSACTION_UPDATED", "DEVICE_LIST", "CLEAR"
+    val type: String, // "INIT_SNAPSHOT", "TRANSACTION_UPDATED", "CHANNEL_EVENT", "DEVICE_LIST", "CLEAR"
     val transaction: DecodedTransactionDto? = null,
     val transactions: List<DecodedTransactionDto>? = null,
+    val channelEvent: ChannelEventDto? = null,
+    val channelEvents: List<ChannelEventDto>? = null,
     val devices: List<DeviceSummaryDto>? = null,
     /** For CLEAR: the device that was cleared, or null when all devices were. */
     val serial: String? = null
@@ -101,6 +116,19 @@ data class WebSocketMessage(
 data class IngestResponse(
     val status: String,
     val eventsIngested: Int
+)
+
+/** Result of decoding a pasted or uploaded log. Nothing is stored or broadcast. */
+@Serializable
+data class DecodeLogResponse(
+    /** In log order, oldest first. */
+    val transactions: List<DecodedTransactionDto>,
+    val channelEvents: List<ChannelEventDto>,
+    val eventsFound: Int,
+    /** Blocks that looked like events but could not be parsed (first few reasons). */
+    val errors: List<String> = emptyList(),
+    /** True when the log had more events than the decode limit. */
+    val truncated: Boolean = false
 )
 
 /** First frame a dashboard client must send on /ws/stream. */
@@ -114,6 +142,16 @@ data class WsAuthMessage(
 // ---------------------------------------------------------------------------
 // Model to DTO Converters
 // ---------------------------------------------------------------------------
+
+fun ChannelErrorEvent.toDto(): ChannelEventDto = ChannelEventDto(
+    id = id,
+    serial = serial,
+    realm = realm,
+    capturedAt = capturedAt.toString(),
+    tag = tag,
+    kind = kind,
+    message = message
+)
 
 fun DecodedTransaction.toDto(): DecodedTransactionDto {
     val createdStr = request?.rawEvent?.capturedAt?.toString()

@@ -50,7 +50,8 @@ class VisualizerLogListener @JvmOverloads constructor(
         private val XML_MEDIA_TYPE = "application/xml; charset=utf-8".toMediaType()
 
         private val log = Logger.getLogger("VisualizerLogListener")
-        private val ACCEPTED_TAGS = setOf("send", "receive")
+        private val ACCEPTED_TAGS = setOf("send", "receive", "connect", "disconnect", "error", "warn")
+        private const val MAX_ERROR_CHARS = 300
         private val ISO_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
 
@@ -152,13 +153,18 @@ class VisualizerLogListener @JvmOverloads constructor(
             else -> if (rawPayload != null) listOf(rawPayload) else null
         }
 
-        val isoMsg = collectionPayload?.filterIsInstance<ISOMsg>()?.firstOrNull() ?: return ev
+        val isoMsg = collectionPayload?.filterIsInstance<ISOMsg>()?.firstOrNull()
 
         try {
-            val xmlPayload = buildXml(ev, isoMsg)
-            val offered = eventQueue.offer(xmlPayload)
-            if (!offered) {
-                log.warning("Tap8583 event queue full — dropping event to prevent latency")
+            if (isoMsg != null && (ev.tag == "send" || ev.tag == "receive")) {
+                enqueue(buildXml(ev, isoMsgBody = dumpIsoMsg(isoMsg)))
+            }
+            // Timeouts, disconnects and failed connects carry no ISO message,
+            // but they explain why a request never got its response.
+            val error = describeChannelError(ev.tag, collectionPayload.orEmpty())
+            if (error != null) {
+                val (kind, detail) = error
+                enqueue(buildXml(ev, isoMsgBody = "  <channel-error kind=\"$kind\">${escapeXml(detail)}</channel-error>\n"))
             }
         } catch (t: Throwable) {
             log.log(Level.WARNING, "Failed to enqueue ISO event: ${t.message}", t)
@@ -166,6 +172,42 @@ class VisualizerLogListener @JvmOverloads constructor(
 
         return ev
     }
+
+    private fun enqueue(xmlPayload: String) {
+        if (!eventQueue.offer(xmlPayload)) {
+            log.warning("Tap8583 event queue full — dropping event to prevent latency")
+        }
+    }
+
+    /**
+     * Recognises the channel problems jPOS logs inside send/receive/connect
+     * events: "<io-timeout/>" and "<peer-disconnect/>" markers, and
+     * exceptions. Returns the kind and a short detail, or null.
+     */
+    private fun describeChannelError(tag: String?, payload: Collection<*>): Pair<String, String>? {
+        for (item in payload) {
+            when (item) {
+                is String -> when {
+                    item.contains("io-timeout") -> return "io-timeout" to stripTags(item).ifEmpty { "Read timed out" }
+                    item.contains("peer-disconnect") -> return "peer-disconnect" to stripTags(item).ifEmpty { "Host closed the connection" }
+                }
+                is Throwable -> {
+                    val kind = when {
+                        item is java.net.SocketTimeoutException || item is java.io.InterruptedIOException -> "io-timeout"
+                        tag == "connect" || item is java.net.ConnectException -> "connect-failed"
+                        item is java.io.EOFException || item is java.net.SocketException -> "peer-disconnect"
+                        else -> "exception"
+                    }
+                    val detail = "${item.javaClass.simpleName}: ${item.message ?: ""}".trim().removeSuffix(":")
+                    return kind to detail.take(MAX_ERROR_CHARS)
+                }
+            }
+        }
+        return null
+    }
+
+    private fun stripTags(s: String): String =
+        s.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_ERROR_CHARS)
 
     // -----------------------------------------------------------------------
     // Background HTTP Dispatcher
@@ -223,7 +265,7 @@ class VisualizerLogListener @JvmOverloads constructor(
     // XML Serialisation
     // -----------------------------------------------------------------------
 
-    private fun buildXml(ev: LogEvent, isoMsg: ISOMsg): String {
+    private fun buildXml(ev: LogEvent, isoMsgBody: String): String {
         val createdAt: Instant = try {
             val f = ev.javaClass.getDeclaredField("createdAt")
             f.isAccessible = true
@@ -238,7 +280,6 @@ class VisualizerLogListener @JvmOverloads constructor(
 
         val realm = escapeXml(try { ev.realm ?: "unknown" } catch (_: Throwable) { "unknown" })
         val tag = escapeXml(try { ev.tag ?: "send" } catch (_: Throwable) { "send" })
-        val isoMsgXml = dumpIsoMsg(isoMsg)
 
         return buildString {
             append("<visualizer-event")
@@ -248,7 +289,7 @@ class VisualizerLogListener @JvmOverloads constructor(
             append(" tag=\"$tag\"")
             append(" serial=\"$resolvedSerial\"")
             append(">\n")
-            append(isoMsgXml)
+            append(isoMsgBody)
             append("</visualizer-event>\n")
             append("---END---\n")
         }

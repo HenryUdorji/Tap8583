@@ -65,3 +65,30 @@ data class RawLogEvent(
     val fields: Map<Int, RawField>,
     val serial: String? = null
 )
+
+/**
+ * A channel-level problem reported by jPOS instead of an ISO message:
+ * a read timeout, the host closing the connection, a failed connect or an
+ * exception while packing or unpacking.
+ *
+ * Sent by VisualizerLogListener as
+ * `<visualizer-event …><channel-error kind="io-timeout">Read timed out</channel-error></visualizer-event>`.
+ *
+ * @param kind     "io-timeout", "peer-disconnect", "connect-failed" or "exception"
+ * @param message  Human-readable detail (exception class and message), already shortened
+ */
+data class ChannelErrorEvent(
+    val id: String,
+    val realm: String,
+    val capturedAt: Instant,
+    val tag: String,
+    val kind: String,
+    val message: String,
+    val serial: String? = null
+)
+
+/** One parsed <visualizer-event>: an ISO message or a channel error. */
+sealed class LogEntry {
+    data class Message(val event: RawLogEvent) : LogEntry()
+    data class ChannelError(val event: ChannelErrorEvent) : LogEntry()
+}
