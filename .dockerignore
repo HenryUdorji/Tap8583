@@ -1,0 +1,8 @@
+.git
+.gradle
+.kotlin
+**/build
+webApp
+desktopApp
+deploy
+*.md

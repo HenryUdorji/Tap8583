@@ -49,16 +49,16 @@ class PosApplication : Application() {
 
 ## 🔒 3 — Security & Multi-Terminal Isolation
 
-- All log transmissions require your Team **API Key** (`x-api-key`).
-- Even though POS serial numbers are often sequential, unauthorized users cannot view your terminal transactions without your specific workspace API key.
-- Sensitive payment data (PANs, Track 2, PIN blocks) are masked by default.
+- All log transmissions require the **ingest key** (`x-api-key`). It can only send events, so it is safe to build into debug APKs.
+- Viewing transactions requires the separate **viewer key**, entered in the dashboard.
+- Card data (PAN, Track 2, expiry, PIN block, and the card data inside DE55) is masked on the server before it is stored or shown.
 
 ---
 
 ## 📱 4 — View Live Logs on the Web Dashboard
 
-1. Open your Tap8583 Web Dashboard: `https://tap8583.vercel.app` (or your local/VPS URL).
-2. Enter your **Team API Key** in the settings.
+1. Open your Tap8583 Web Dashboard (your Hetzner domain, or `http://localhost:3000` locally).
+2. Enter the **viewer key** in the settings. This is a different key from the ingest key built into the POS app, which can only send events.
 3. Select your device from the **Device Selector Dropdown** (or select **All Devices**).
 4. Perform transactions on your POS terminal — packets, MTI tiles, STAN pairings, RTT latency, and EMV TLV trees appear instantly on screen!
 
@@ -66,12 +66,12 @@ class PosApplication : Application() {
 
 ## ⚙️ 5 — Advanced / Self-Hosted Configuration (Optional)
 
-If self-hosting the Kotlin Ktor backend on your own Hetzner VPS:
+Point the listener at your Hetzner deployment (see `deploy/HETZNER_DEPLOYMENT.md`):
 
 ```kotlin
 VisualizerLogListener.install(
-    apiKey = "tap_live_YOUR_KEY",
-    endpoint = "https://your-hetzner-vps.com/api/v1/events",
+    apiKey = "YOUR_INGEST_KEY",
+    endpoint = "https://your-domain/api/v1/events",
     deviceSerial = "CUSTOM-SERIAL-TAG" // Optional custom tag
 )
 ```

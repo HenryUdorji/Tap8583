@@ -1,0 +1,101 @@
+name: Deploy to Hetzner
+
+# Builds the server and dashboard images, pushes them to GHCR, then deploys
+# to the Hetzner server over SSH.
+#
+# One-time setup (Settings → Secrets and variables → Actions):
+#   variables: DEPLOY_ENABLED=true, HETZNER_HOST, HETZNER_USER
+#   secrets:   HETZNER_SSH_KEY (private key for HETZNER_USER)
+# The server needs ~/tap8583/deploy/.env filled in (see deploy/.env.example);
+# the compose file and Caddyfile are copied on every deploy.
+# See deploy/HETZNER_DEPLOYMENT.md.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  SERVER_IMAGE: ghcr.io/henryudorji/tap8583-server
+  WEB_IMAGE: ghcr.io/henryudorji/tap8583-web
+
+jobs:
+  images:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: serverApp/Dockerfile
+          push: true
+          tags: |
+            ${{ env.SERVER_IMAGE }}:latest
+            ${{ env.SERVER_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: webApp
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:latest
+            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  deploy:
+    name: Deploy
+    needs: images
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy compose file and Caddyfile
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.HETZNER_HOST }}
+          username: ${{ vars.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          source: deploy/docker-compose.yml,deploy/Caddyfile
+          target: ~/tap8583
+
+      - name: Pull and restart on the server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.HETZNER_HOST }}
+          username: ${{ vars.HETZNER_USER }}
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/tap8583/deploy
+            export SERVER_IMAGE=${{ env.SERVER_IMAGE }}:${{ github.sha }}
+            export WEB_IMAGE=${{ env.WEB_IMAGE }}:${{ github.sha }}
+            docker compose pull server web
+            docker compose up -d --no-build --remove-orphans
+            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+            docker image prune -f
