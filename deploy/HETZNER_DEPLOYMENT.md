@@ -111,7 +111,7 @@ Each deploy copies the compose file and Caddyfile, pulls the images tagged with 
 - **Logs:** `docker compose logs -f server` (or `web`, `caddy`)
 - **Roll back:** `SERVER_IMAGE=ghcr.io/henryudorji/tap8583-server:<older-sha> WEB_IMAGE=ghcr.io/henryudorji/tap8583-web:<older-sha> docker compose up -d`
 - **Rotate a terminal key:** create a new key in **Settings → Terminals**, ship it in the debug build, then revoke the old one. Revoking takes effect immediately.
-- **Database:** `docker compose exec postgres psql -U tap8583 tap8583`. Data lives on the `postgres_data` volume and survives restarts and deploys. There are no automatic backups; `docker compose down -v` deletes everything.
+- **Database:** `docker compose exec postgres psql -U tap8583 tap8583`. To browse it in a GUI (TablePlus, DBeaver, pgAdmin), turn on its SSH tunnel option: SSH `deploy@<server-ip>` with your key, then database host `127.0.0.1`, port `5432`, database and user `tap8583`, password `POSTGRES_PASSWORD` from `.env`. Postgres listens on the server's localhost only, so it is never reachable from the internet. Data lives on the `postgres_data` volume and survives restarts and deploys. There are no automatic backups; `docker compose down -v` deletes everything.
 - **Email not arriving:** `docker compose logs server | grep -i mail`. Check the provider's dashboard and that `SMTP_FROM` is on a verified domain.
 
 ### Without accounts

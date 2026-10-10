@@ -44,6 +44,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Reachable only from the server itself, for an SSH tunnel from a database GUI.
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tap8583 -d tap8583"]
       interval: 5s
