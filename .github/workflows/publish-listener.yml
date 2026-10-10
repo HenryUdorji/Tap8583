@@ -1,0 +1,47 @@
+name: Publish listenerLib to Maven Central
+
+# Publishes dev.sarari:tap8583-listener when a tag like `listener-v1.0.0` is pushed:
+#   git tag listener-v1.0.0 && git push origin listener-v1.0.0
+#
+# One-time setup (Settings → Secrets and variables → Actions → Secrets):
+#   MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD  — a user token from central.sonatype.com
+#                                                      (Account → Generate User Token)
+#   SIGNING_KEY          — ASCII-armored GPG private key (gpg --armor --export-secret-keys <id>)
+#   SIGNING_KEY_PASSWORD — its passphrase
+# The public key must be on a keyserver Central checks (e.g. keys.openpgp.org).
+
+on:
+  push:
+    tags:
+      - 'listener-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Read version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#listener-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish and release
+        run: >
+          ./gradlew :listenerLib:publishAndReleaseToMavenCentral
+          -PlistenerVersion=${{ steps.version.outputs.version }}
+          --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}

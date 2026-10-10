@@ -1,4 +1,4 @@
-package com.tap8583.visualizer
+package dev.sarari.tap8583.listener
 
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,22 +30,22 @@ import java.util.logging.Logger
  * Designed for seamless QA & Developer workflows on Android POS terminals with
  * ZERO manual local IP/port configuration.
  *
- * ## Quick start (One-line setup in Android `Application.onCreate()`):
+ * ## Quick start (one-line setup in Android `Application.onCreate()`):
  * ```kotlin
  * VisualizerLogListener.install(
- *     apiKey = "tap_live_YOUR_API_KEY"
+ *     apiKey = "YOUR_INGEST_KEY",
+ *     endpoint = "https://your-tap8583-host/api/v1/events"
  * )
  * ```
  */
 class VisualizerLogListener @JvmOverloads constructor(
     private var apiKey: String = "",
-    private var endpoint: String = DEFAULT_ENDPOINT,
+    private var endpoint: String = "",
     private var deviceSerial: String? = null,
     private val queueCapacity: Int = DEFAULT_QUEUE_CAPACITY
 ) : LogListener, Configurable {
 
     companion object {
-        const val DEFAULT_ENDPOINT = "https://ingest.tap8583.app/api/v1/events"
         private const val DEFAULT_QUEUE_CAPACITY = 100
         private val XML_MEDIA_TYPE = "application/xml; charset=utf-8".toMediaType()
 
@@ -65,7 +65,7 @@ class VisualizerLogListener @JvmOverloads constructor(
         @JvmOverloads
         fun install(
             apiKey: String,
-            endpoint: String = DEFAULT_ENDPOINT,
+            endpoint: String,
             deviceSerial: String? = null
         ): VisualizerLogListener {
             val listener = VisualizerLogListener(
@@ -97,6 +97,7 @@ class VisualizerLogListener @JvmOverloads constructor(
 
     private val eventQueue = ArrayBlockingQueue<String>(queueCapacity)
     private val isRunning = AtomicBoolean(true)
+    private val missingEndpointWarned = AtomicBoolean(false)
 
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -189,6 +190,12 @@ class VisualizerLogListener @JvmOverloads constructor(
     }
 
     private fun sendEventOverHttp(xml: String) {
+        if (endpoint.isBlank()) {
+            if (missingEndpointWarned.compareAndSet(false, true)) {
+                log.warning("Tap8583 endpoint is not configured — events are not being sent")
+            }
+            return
+        }
         try {
             val body = xml.toRequestBody(XML_MEDIA_TYPE)
             val requestBuilder = Request.Builder()

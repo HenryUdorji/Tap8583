@@ -67,13 +67,13 @@ jobs:
             Automated release generated on commit `${{ github.sha }}`.
 
             #### 📦 Release Artifacts:
-            * **`visualizer-log-listener-1.0.0.jar`**: Client library for Android / jPOS POS applications.
+            * **`tap8583-listener` JAR**: Client library for Android / jPOS POS applications (also on Maven Central as `dev.sarari:tap8583-listener`).
             * **`serverApp`**: Kotlin / Ktor cloud ingestion server.
             * **`webApp`**: Next.js 15 Web application.
 
             #### 🚀 Quick Android Setup:
             ```kotlin
-            VisualizerLogListener.install(apiKey = "tap_live_secret")
+            VisualizerLogListener.install(apiKey = "YOUR_INGEST_KEY", endpoint = "https://your-host/api/v1/events")
             ```
           draft: false
           prerelease: false
