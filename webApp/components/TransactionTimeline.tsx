@@ -6,10 +6,13 @@ import {
   CheckCircle2,
   Clock,
   HelpCircle,
+  FileText,
   Pause,
   Play,
+  Plug,
   Radio,
   Timer,
+  Undo2,
   XCircle,
 } from "lucide-react";
 import { DecodedTransactionDto } from "@/lib/types";
@@ -34,14 +37,28 @@ const STATUS_ICONS: Record<TransactionStatus, React.ComponentType<{ className?: 
   ORPHAN: HelpCircle,
 };
 
+/** Extra facts shown as chips on a card. */
+export interface TransactionAnnotation {
+  /** Number of reversals that point at this transaction. */
+  reversedBy?: number;
+  /** Plain-language label of the first channel problem during this transaction. */
+  channelIssue?: string;
+}
+
 interface TransactionTimelineProps {
   transactions: DecodedTransactionDto[];
   selectedTransactionId: string | null;
   onSelectTransaction: (tx: DecodedTransactionDto) => void;
   isPaused: boolean;
-  onTogglePause: () => void;
+  /** Omit to hide the pause button (e.g. for a decoded log, which never changes). */
+  onTogglePause?: () => void;
   /** Transactions that arrived while paused and are not shown yet. */
   heldCount: number;
+  annotations?: Map<string, TransactionAnnotation>;
+  /** Opens the paste/upload dialog from the empty state. */
+  onOpenDecodeLog?: () => void;
+  /** Overrides the header title, e.g. for a decoded log. */
+  title?: string;
 }
 
 function capturedAt(tx: DecodedTransactionDto): Date | null {
@@ -68,6 +85,9 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
   isPaused,
   onTogglePause,
   heldCount,
+  annotations,
+  onOpenDecodeLog,
+  title = "Transactions",
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -114,26 +134,28 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <Radio className={`w-3.5 h-3.5 ${isPaused ? "text-amber-400" : "text-sky-400"}`} />
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-300 truncate">
-            Transactions
+            {title}
           </span>
           <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400">
             {transactions.length}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onTogglePause}
-          aria-pressed={isPaused}
-          title={isPaused ? "Resume the live stream" : "Pause the live stream to read without the list moving"}
-          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 ${
-            isPaused
-              ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
-              : "bg-slate-800/80 border-white/10 text-slate-300 hover:text-slate-100"
-          }`}
-        >
-          {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-          <span>{isPaused ? (heldCount > 0 ? `Resume · ${heldCount} new` : "Resume") : "Pause"}</span>
-        </button>
+        {onTogglePause && (
+          <button
+            type="button"
+            onClick={onTogglePause}
+            aria-pressed={isPaused}
+            title={isPaused ? "Resume the live stream" : "Pause the live stream to read without the list moving"}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 ${
+              isPaused
+                ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20"
+                : "bg-slate-800/80 border-white/10 text-slate-300 hover:text-slate-100"
+            }`}
+          >
+            {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+            <span>{isPaused ? (heldCount > 0 ? `Resume · ${heldCount} new` : "Resume") : "Pause"}</span>
+          </button>
+        )}
       </div>
 
       {/* Unread Pill */}
@@ -159,6 +181,16 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
             <div className="text-xs text-slate-500 mt-1 max-w-xs">
               Perform a transaction on your POS terminal, or use &quot;Simulate Txn&quot; in the top bar.
             </div>
+            {onOpenDecodeLog && (
+              <button
+                type="button"
+                onClick={onOpenDecodeLog}
+                className="mt-4 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-slate-800/80 text-xs font-medium text-slate-300 hover:text-slate-100"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                No terminal? Paste a jPOS log
+              </button>
+            )}
           </div>
         ) : (
           transactions.map((tx) => {
@@ -172,9 +204,12 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
             const date = capturedAt(tx);
             const waited = date ? Math.floor((now - date.getTime()) / 1000) : null;
 
+            const note = annotations?.get(tx.id);
             const outcome =
               tx.status === "PENDING" && waited !== null
-                ? `Waiting ${Math.min(waited, MATCH_WINDOW_SECONDS)}s / ${MATCH_WINDOW_SECONDS}s`
+                ? waited > MATCH_WINDOW_SECONDS
+                  ? "No response"
+                  : `Waiting ${waited}s / ${MATCH_WINDOW_SECONDS}s`
                 : rc
                 ? `${rc.code} · ${rc.name}`
                 : style.label;
@@ -216,6 +251,24 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
                     </span>
                   )}
                 </div>
+
+                {/* Chips: reversals and channel problems */}
+                {(note?.reversedBy || note?.channelIssue) && (
+                  <div className="flex flex-wrap gap-1.5 mb-2 pl-2">
+                    {note.reversedBy ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-purple-500/30 bg-purple-500/10 text-[10px] font-medium text-purple-400">
+                        <Undo2 className="w-3 h-3" />
+                        Reversed{note.reversedBy > 1 ? ` ×${note.reversedBy}` : ""}
+                      </span>
+                    ) : null}
+                    {note.channelIssue && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-orange-500/30 bg-orange-500/10 text-[10px] font-medium text-orange-400">
+                        <Plug className="w-3 h-3" />
+                        {note.channelIssue}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Bottom row: outcome and RTT */}
                 <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2 pl-2">

@@ -1,6 +1,7 @@
 package com.tap8583.server
 
 import com.tap8583.server.models.*
+import com.tap8583.server.storage.ChannelEventLog
 import com.tap8583.server.storage.TransactionStore
 import com.tap8583.tap8583.decoder.DecodedTransaction
 import com.tap8583.tap8583.decoder.SemanticDecoder
@@ -34,6 +35,15 @@ import java.util.concurrent.CopyOnWriteArraySet
 
 /** Largest ingest payload accepted from a terminal (one or a few jPOS events). */
 private const val MAX_INGEST_BYTES = 512 * 1024
+
+/** Largest log a viewer can paste or upload for decoding. */
+private const val MAX_DECODE_BYTES = 2 * 1024 * 1024
+
+/** Most events decoded from one pasted log. */
+private const val MAX_DECODE_EVENTS = 2_000
+
+/** Serial given to transactions decoded from a pasted log. */
+private const val PASTED_LOG_SERIAL = "pasted-log"
 
 /** How long a WebSocket client has to send its AUTH frame after connecting. */
 private const val WS_AUTH_TIMEOUT_MS = 10_000L
@@ -108,6 +118,17 @@ private suspend fun ApplicationCall.requireKey(vararg allowed: String): Boolean 
     return false
 }
 
+/** Runs the semantic decoder over both sides of a matched transaction. */
+private fun decode(tx: Transaction): DecodedTransaction = DecodedTransaction(
+    id = tx.id,
+    stan = tx.stan,
+    request = tx.request?.let { SemanticDecoder.decode(it) },
+    response = tx.response?.let { SemanticDecoder.decode(it) },
+    status = tx.status,
+    rttMs = tx.rttMs,
+    serial = tx.serial
+)
+
 fun Application.module() {
     val log = LoggerFactory.getLogger("Tap8583Server")
     val config = ServerConfig.fromEnv(log)
@@ -129,6 +150,7 @@ fun Application.module() {
     val appScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     val matcher = TransactionMatcher(scope = appScope)
     val store = TransactionStore(maxPerDevice = 50, ttlDays = 7)
+    val channelEvents = ChannelEventLog(maxEvents = 500)
 
     // WebSocket Subscriber Registry (authenticated clients only)
     data class ClientSession(
@@ -144,8 +166,8 @@ fun Application.module() {
         wsClients.forEach { client ->
             try {
                 val clientSerial = client.filterSerial
-                val txSerial = msg.transaction?.serial
-                val relevant = msg.transaction == null ||
+                val txSerial = msg.transaction?.serial ?: msg.channelEvent?.serial
+                val relevant = (msg.transaction == null && msg.channelEvent == null) ||
                     clientSerial.isNullOrBlank() ||
                     clientSerial.equals("ALL", ignoreCase = true) ||
                     clientSerial == txSerial
@@ -164,15 +186,7 @@ fun Application.module() {
                 is TransactionEvent.Updated -> event.transaction
                 is TransactionEvent.Timeout -> event.transaction
             }
-            val decodedTx = DecodedTransaction(
-                id = tx.id,
-                stan = tx.stan,
-                request = tx.request?.let { SemanticDecoder.decode(it) },
-                response = tx.response?.let { SemanticDecoder.decode(it) },
-                status = tx.status,
-                rttMs = tx.rttMs,
-                serial = tx.serial
-            )
+            val decodedTx = decode(tx)
             store.saveOrUpdate(decodedTx)
             broadcast(WebSocketMessage(type = "TRANSACTION_UPDATED", transaction = decodedTx.toDto()))
         }
@@ -262,14 +276,29 @@ fun Application.module() {
                 var ingested = 0
 
                 for (chunk in xmlChunks) {
-                    val event = JposXmlParser.parse(chunk)
-                    val withSerial = if (event.serial.isNullOrBlank() && !headerSerial.isNullOrBlank()) {
-                        event.copy(serial = headerSerial.trim())
-                    } else {
-                        event
+                    when (val entry = JposXmlParser.parseEntry(chunk)) {
+                        is LogEntry.Message -> {
+                            val event = entry.event
+                            val withSerial = if (event.serial.isNullOrBlank() && !headerSerial.isNullOrBlank()) {
+                                event.copy(serial = headerSerial.trim())
+                            } else {
+                                event
+                            }
+                            val safeEvent = if (config.maskCardData) CardDataMasker.mask(withSerial) else withSerial
+                            matcher.ingest(safeEvent)
+                        }
+                        is LogEntry.ChannelError -> {
+                            val event = entry.event
+                            val withSerial = if (event.serial.isNullOrBlank() && !headerSerial.isNullOrBlank()) {
+                                event.copy(serial = headerSerial.trim())
+                            } else {
+                                event
+                            }
+                            val safeEvent = if (config.maskCardData) CardDataMasker.mask(withSerial) else withSerial
+                            channelEvents.add(safeEvent)
+                            broadcast(WebSocketMessage(type = "CHANNEL_EVENT", channelEvent = safeEvent.toDto()))
+                        }
                     }
-                    val safeEvent = if (config.maskCardData) CardDataMasker.mask(withSerial) else withSerial
-                    matcher.ingest(safeEvent)
                     ingested++
                 }
 
@@ -277,6 +306,60 @@ fun Application.module() {
             } catch (e: Exception) {
                 log.warn("XML Parse / Ingestion error: ${e.message}")
                 call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to (e.message ?: "Parse error")))
+            }
+        }
+
+        // --- Decode a pasted or uploaded jPOS log (nothing is stored or broadcast) ---
+        post("/api/v1/decode") {
+            if (!call.requireKey(config.viewerKey)) return@post
+
+            val declaredLength = call.request.contentLength()
+            if (declaredLength != null && declaredLength > MAX_DECODE_BYTES) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Log is larger than 2 MB"))
+                return@post
+            }
+            val text = call.receiveText()
+            if (text.length > MAX_DECODE_BYTES) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Log is larger than 2 MB"))
+                return@post
+            }
+
+            val blocks = JposLogExtractor.extract(text, PASTED_LOG_SERIAL, MAX_DECODE_EVENTS + 1)
+            val truncated = blocks.size > MAX_DECODE_EVENTS
+            val errors = mutableListOf<String>()
+            val decodedChannelEvents = mutableListOf<ChannelEventDto>()
+
+            // A private matcher pairs requests and responses within this log only.
+            val decodeScope = CoroutineScope(Dispatchers.Default)
+            val logMatcher = TransactionMatcher(scope = decodeScope, maxRetained = MAX_DECODE_EVENTS)
+            try {
+                for (block in blocks.take(MAX_DECODE_EVENTS)) {
+                    try {
+                        when (val entry = JposXmlParser.parseEntry(block)) {
+                            is LogEntry.Message -> logMatcher.ingest(
+                                if (config.maskCardData) CardDataMasker.mask(entry.event) else entry.event
+                            )
+                            is LogEntry.ChannelError -> decodedChannelEvents += (
+                                if (config.maskCardData) CardDataMasker.mask(entry.event) else entry.event
+                            ).toDto()
+                        }
+                    } catch (e: JposXmlParser.ParseException) {
+                        if (errors.size < 5) errors += (e.message ?: "Could not parse an event")
+                    }
+                }
+                val transactions = logMatcher.transactions.value.map { decode(it).toDto() }
+                call.respond(
+                    DecodeLogResponse(
+                        transactions = transactions,
+                        channelEvents = decodedChannelEvents,
+                        eventsFound = blocks.size.coerceAtMost(MAX_DECODE_EVENTS),
+                        errors = errors,
+                        truncated = truncated
+                    )
+                )
+            } finally {
+                logMatcher.stop()
+                decodeScope.cancel()
             }
         }
 
@@ -301,6 +384,7 @@ fun Application.module() {
                 ?.takeUnless { it.isBlank() || it.equals("ALL", ignoreCase = true) }
             matcher.clear(serial)
             store.clear(serial)
+            channelEvents.clear(serial)
             broadcast(WebSocketMessage(type = "CLEAR", serial = serial))
             call.respond(mapOf("status" to "cleared"))
         }
@@ -332,6 +416,7 @@ fun Application.module() {
                 val initMessage = WebSocketMessage(
                     type = "INIT_SNAPSHOT",
                     transactions = store.getTransactions(clientSerial, 50).map { it.toDto() },
+                    channelEvents = channelEvents.recent(clientSerial, 100).map { it.toDto() },
                     devices = store.getDevices()
                 )
                 send(Frame.Text(jsonConfig.encodeToString(initMessage)))

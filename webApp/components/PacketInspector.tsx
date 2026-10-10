@@ -30,6 +30,8 @@ interface PacketInspectorProps {
   onSelectField: (field: DecodedFieldDto | null) => void;
   /** Shown on small screens, where the inspector replaces the timeline. */
   onBack?: () => void;
+  /** Replaces the default summary strip, e.g. with linked reversals and channel errors. */
+  summary?: React.ReactNode;
 }
 
 type TabType = "REQUEST" | "RESPONSE" | "DIFF" | "RAW";
@@ -39,6 +41,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
   selectedField,
   onSelectField,
   onBack,
+  summary,
 }) => {
   // The parent remounts this component per transaction (key), so tab and
   // reveal state never carry over to the next transaction.
@@ -178,7 +181,7 @@ export const PacketInspector: React.FC<PacketInspectorProps> = ({
         )}
       </div>
 
-      <TransactionSummary transaction={transaction} />
+      {summary ?? <TransactionSummary transaction={transaction} />}
 
       {/* Main Content Area based on Tab */}
       <div className="flex-1 overflow-y-auto">

@@ -1,19 +1,32 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import {
+  ChannelEventDto,
+  DecodeLogResponse,
   DecodedFieldDto,
   DecodedTransactionDto,
   DeviceSummaryDto,
   WebSocketMessage
 } from "@/lib/types";
 import { TopBar } from "@/components/TopBar";
-import { TransactionTimeline } from "@/components/TransactionTimeline";
+import { TransactionAnnotation, TransactionTimeline } from "@/components/TransactionTimeline";
 import { PacketInspector } from "@/components/PacketInspector";
 import { FieldDetailPanel } from "@/components/FieldDetailPanel";
 import { SettingsModal } from "@/components/SettingsModal";
+import { TransactionSummary } from "@/components/TransactionSummary";
+import { StatsBar } from "@/components/StatsBar";
+import { AlertToasts } from "@/components/AlertToasts";
+import { DecodeLogModal } from "@/components/DecodeLogModal";
+import { linkReversals } from "@/lib/reversals";
+import { channelEventLabel, channelEventsFor } from "@/lib/channelEvents";
+import { computeStats } from "@/lib/stats";
+import { Alert, alertForChannelEvent, alertForTransaction } from "@/lib/alerts";
 import {
   ConnectionState,
+  loadAlertsEnabled,
+  saveAlertsEnabled,
   WS_CLOSE_UNAUTHORIZED,
   apiUrl,
   loadApiKey,
@@ -51,6 +64,19 @@ export default function Home() {
   // Below the lg breakpoint the timeline and inspector share the screen in turn.
   const [mobileView, setMobileView] = useState<"list" | "detail">("list");
 
+  // Timeouts, disconnects and failed connects reported by terminals.
+  const [channelEvents, setChannelEvents] = useState<ChannelEventDto[]>([]);
+
+  // Pop-up alerts for live problems.
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertsEnabled, setAlertsEnabled] = useState(true);
+  const alertsEnabledRef = useRef(true);
+  const seenAlertIdsRef = useRef<Set<string>>(new Set());
+
+  // A pasted or uploaded log replaces the live list until "Back to live".
+  const [decodedLog, setDecodedLog] = useState<(DecodeLogResponse & { name: string }) | null>(null);
+  const [isDecodeOpen, setIsDecodeOpen] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -59,6 +85,9 @@ export default function Home() {
     const savedKey = loadApiKey();
     const savedOverride = loadServerUrlOverride();
     setApiKey(savedKey);
+    const savedAlerts = loadAlertsEnabled();
+    setAlertsEnabled(savedAlerts);
+    alertsEnabledRef.current = savedAlerts;
     setServerUrlOverride(savedOverride);
     setServerUrl(resolveServerUrl(savedOverride));
     if (!savedKey) {
@@ -66,6 +95,20 @@ export default function Home() {
       setIsSettingsOpen(true);
     }
   }, []);
+
+  const pushAlert = useCallback((alert: Alert | null) => {
+    if (!alert || !alertsEnabledRef.current || seenAlertIdsRef.current.has(alert.id)) return;
+    seenAlertIdsRef.current.add(alert.id);
+    setAlerts((prev) => [...prev, alert].slice(-3));
+  }, []);
+
+  const toggleAlerts = () => {
+    const next = !alertsEnabled;
+    setAlertsEnabled(next);
+    alertsEnabledRef.current = next;
+    saveAlertsEnabled(next);
+    if (!next) setAlerts([]);
+  };
 
   // Connect to WebSocket backend. The key goes in the first frame, never the URL.
   useEffect(() => {
@@ -104,6 +147,11 @@ export default function Home() {
               if (data.devices) {
                 setDevices(data.devices);
               }
+              setChannelEvents(data.channelEvents || []);
+            } else if (data.type === "CHANNEL_EVENT" && data.channelEvent) {
+              const ev = data.channelEvent;
+              setChannelEvents((prev) => [...prev, ev].slice(-200));
+              pushAlert(alertForChannelEvent(ev));
             } else if (data.type === "TRANSACTION_UPDATED" && data.transaction) {
               const updated = data.transaction;
               setTransactions((prev) => {
@@ -133,13 +181,16 @@ export default function Home() {
 
               // Auto-select if nothing is selected
               setSelectedTransactionId((prev) => prev || updated.id);
+              pushAlert(alertForTransaction(updated));
             } else if (data.type === "CLEAR") {
               if (data.serial) {
                 setTransactions((prev) => prev.filter((t) => t.serial !== data.serial));
                 setDevices((prev) => prev.filter((d) => d.serial !== data.serial));
+                setChannelEvents((prev) => prev.filter((e) => e.serial !== data.serial));
               } else {
                 setTransactions([]);
                 setDevices([]);
+                setChannelEvents([]);
               }
               setSelectedTransactionId(null);
               setSelectedField(null);
@@ -178,7 +229,7 @@ export default function Home() {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [serverUrl, apiKey, selectedSerial, connectNonce]);
+  }, [serverUrl, apiKey, selectedSerial, connectNonce, pushAlert]);
 
   // Escape closes the field detail drawer.
   useEffect(() => {
@@ -189,16 +240,21 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // A decoded log, when one is open, stands in for the live data.
+  const sourceTransactions = decodedLog ? decodedLog.transactions : transactions;
+  const sourceChannelEvents = decodedLog ? decodedLog.channelEvents : channelEvents;
+  const deviceFilter = !decodedLog && selectedSerial && selectedSerial !== "ALL" ? selectedSerial : null;
+
   // Selected Transaction Object
   const selectedTransaction = useMemo(() => {
-    return transactions.find((t) => t.id === selectedTransactionId) || transactions[0] || null;
-  }, [transactions, selectedTransactionId]);
+    return sourceTransactions.find((t) => t.id === selectedTransactionId) || sourceTransactions[0] || null;
+  }, [sourceTransactions, selectedTransactionId]);
 
   // Filtered transactions based on search query, device selector, and message filter
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
+    return sourceTransactions.filter((tx) => {
       // 1. Device filter
-      if (selectedSerial && selectedSerial !== "ALL" && tx.serial !== selectedSerial) {
+      if (deviceFilter && tx.serial !== deviceFilter) {
         return false;
       }
 
@@ -239,13 +295,38 @@ export default function Home() {
 
       return true;
     });
-  }, [transactions, selectedSerial, messageFilter, searchQuery]);
+  }, [sourceTransactions, deviceFilter, messageFilter, searchQuery]);
 
   const visibleTransactions = useMemo(
     () => (pausedIds ? filteredTransactions.filter((t) => pausedIds.has(t.id)) : filteredTransactions),
     [filteredTransactions, pausedIds]
   );
   const heldCount = filteredTransactions.length - visibleTransactions.length;
+
+  const visibleChannelEvents = useMemo(
+    () => (deviceFilter ? sourceChannelEvents.filter((e) => e.serial === deviceFilter) : sourceChannelEvents),
+    [sourceChannelEvents, deviceFilter]
+  );
+  const stats = useMemo(() => computeStats(filteredTransactions), [filteredTransactions]);
+  const reversalLinks = useMemo(() => linkReversals(sourceTransactions), [sourceTransactions]);
+
+  const annotations = useMemo(() => {
+    const map = new Map<string, TransactionAnnotation>();
+    for (const tx of visibleTransactions) {
+      const reversedBy = reversalLinks.reversalsOf.get(tx.id)?.length;
+      const issue = channelEventsFor(tx, sourceChannelEvents)[0];
+      if (reversedBy || issue) {
+        map.set(tx.id, { reversedBy, channelIssue: issue ? channelEventLabel(issue) : undefined });
+      }
+    }
+    return map;
+  }, [visibleTransactions, reversalLinks, sourceChannelEvents]);
+
+  const selectTransaction = (tx: DecodedTransactionDto) => {
+    setSelectedTransactionId(tx.id);
+    setSelectedField(null);
+    setMobileView("detail");
+  };
 
   const togglePause = () => {
     setPausedIds((prev) => (prev ? null : new Set(transactions.map((t) => t.id))));
@@ -337,6 +418,42 @@ export default function Home() {
     }
   };
 
+  // Handler: decode a pasted or uploaded log. Returns an error message, or null on success.
+  const handleDecodeLog = async (text: string, name: string): Promise<string | null> => {
+    if (!apiKey) return "Enter your viewer key in settings first. Decoding runs on your Tap8583 server.";
+    try {
+      const res = await fetch(apiUrl(serverUrl, "/decode"), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain", "x-api-key": apiKey },
+        body: text,
+      });
+      if (res.status === 401) return "The server rejected your key. Check it in settings.";
+      if (res.status === 413) return "That log is larger than 2 MB. Trim it to the part around the transactions you need.";
+      if (!res.ok) return `The server could not decode this log (HTTP ${res.status}).`;
+      const data: DecodeLogResponse = await res.json();
+      if (data.transactions.length === 0 && data.channelEvents.length === 0) {
+        return data.errors[0]
+          ? `No messages could be decoded. First problem: ${data.errors[0]}`
+          : "No jPOS messages were found. The decoder looks for <log>, <isomsg> or <visualizer-event> blocks.";
+      }
+      const newestFirst = [...data.transactions].reverse();
+      setDecodedLog({ ...data, transactions: newestFirst, name });
+      setPausedIds(null);
+      setSelectedTransactionId(newestFirst[0]?.id ?? null);
+      setSelectedField(null);
+      setMobileView("list");
+      return null;
+    } catch {
+      return "Could not reach the Tap8583 server.";
+    }
+  };
+
+  const backToLive = () => {
+    setDecodedLog(null);
+    setSelectedTransactionId(transactions[0]?.id ?? null);
+    setSelectedField(null);
+  };
+
   // Handler: Clear session
   const handleClear = async () => {
     const scope = selectedSerial !== "ALL" ? `device ${selectedSerial}` : "all devices";
@@ -388,7 +505,37 @@ export default function Home() {
         onClear={handleClear}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onExport={handleExport}
+        onOpenDecodeLog={() => setIsDecodeOpen(true)}
         packetCount={filteredTransactions.length}
+      />
+
+      {decodedLog && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 sm:px-4 py-2 border-b border-sky-500/30 bg-sky-500/10 text-xs text-slate-200">
+          <FileText className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
+          <span className="min-w-0">
+            <span className="font-semibold">Viewing {decodedLog.name}:</span>{" "}
+            {decodedLog.transactions.length} transaction{decodedLog.transactions.length === 1 ? "" : "s"}
+            {decodedLog.channelEvents.length > 0 &&
+              `, ${decodedLog.channelEvents.length} channel error${decodedLog.channelEvents.length === 1 ? "" : "s"}`}
+            {decodedLog.truncated && " (only the first 2,000 events)"}
+            {decodedLog.errors.length > 0 && `. Some blocks could not be read: ${decodedLog.errors[0]}`}
+          </span>
+          <button
+            type="button"
+            onClick={backToLive}
+            className="ml-auto px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-on-accent font-semibold"
+          >
+            Back to live
+          </button>
+        </div>
+      )}
+
+      <StatsBar
+        stats={stats}
+        channelEvents={visibleChannelEvents}
+        alertsEnabled={alertsEnabled}
+        onToggleAlerts={toggleAlerts}
+        showAlertsToggle={!decodedLog}
       />
 
       {/* 2. Main Content Area: timeline · inspector · field detail */}
@@ -402,14 +549,13 @@ export default function Home() {
           <TransactionTimeline
             transactions={visibleTransactions}
             selectedTransactionId={selectedTransaction?.id || null}
-            onSelectTransaction={(tx) => {
-              setSelectedTransactionId(tx.id);
-              setSelectedField(null);
-              setMobileView("detail");
-            }}
+            onSelectTransaction={selectTransaction}
             isPaused={pausedIds !== null}
-            onTogglePause={togglePause}
+            onTogglePause={decodedLog ? undefined : togglePause}
             heldCount={heldCount}
+            annotations={annotations}
+            onOpenDecodeLog={decodedLog ? undefined : () => setIsDecodeOpen(true)}
+            title={decodedLog ? "Decoded log" : "Transactions"}
           />
         </div>
 
@@ -421,6 +567,17 @@ export default function Home() {
             selectedField={selectedField}
             onSelectField={(field) => setSelectedField(field)}
             onBack={() => setMobileView("list")}
+            summary={
+              selectedTransaction && (
+                <TransactionSummary
+                  transaction={selectedTransaction}
+                  channelEvents={channelEventsFor(selectedTransaction, sourceChannelEvents)}
+                  original={reversalLinks.originalOf.get(selectedTransaction.id)}
+                  reversals={reversalLinks.reversalsOf.get(selectedTransaction.id)}
+                  onSelectTransaction={selectTransaction}
+                />
+              )
+            }
           />
         </div>
 
@@ -444,6 +601,21 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      <DecodeLogModal isOpen={isDecodeOpen} onClose={() => setIsDecodeOpen(false)} onDecode={handleDecodeLog} />
+
+      <AlertToasts
+        alerts={alerts}
+        onDismiss={(id) => setAlerts((prev) => prev.filter((a) => a.id !== id))}
+        onOpen={(alert) => {
+          setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
+          if (!alert.transactionId) return;
+          setDecodedLog(null);
+          setSelectedTransactionId(alert.transactionId);
+          setSelectedField(null);
+          setMobileView("detail");
+        }}
+      />
 
       {/* 3. Settings Modal */}
       <SettingsModal
