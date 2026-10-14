@@ -1,12 +1,18 @@
 # Tap8583 on a single Hetzner Cloud server.
 #
 #   cd deploy && cp .env.example .env   # fill in the values
+#   # put the Cloudflare Origin Certificate in certs/origin.pem and certs/origin-key.pem
 #   docker compose up -d
 #
-# Caddy terminates HTTPS (automatic Let's Encrypt certificates) and routes
-# /api, /ws and /health to the Ktor server and everything else to the
-# dashboard, so the browser talks to a single origin. Postgres keeps
-# accounts, workspaces and transaction history on the postgres_data volume.
+# Caddy terminates HTTPS on port 8443 (Cloudflare proxies to it; ports 80 and
+# 443 belong to another app on the same server) and routes /api, /ws and
+# /health to the Ktor server and everything else to the dashboard, so the
+# browser talks to a single origin. Postgres keeps accounts, workspaces and
+# transaction history on the deploy_postgres_data volume.
+
+# Fixed project name, so this stack never shares a Compose project with
+# another app's deploy/ folder on the same server.
+name: tap8583
 
 services:
   server:
@@ -69,17 +75,18 @@ services:
       - web
     environment:
       TAP8583_DOMAIN: ${TAP8583_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in deploy/.env}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "8443:8443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
       - caddy_data:/data
       - caddy_config:/config
 
 volumes:
+  # Explicit name: this volume was created when the project was still called
+  # "deploy", and it holds the live database. Never remove it.
   postgres_data:
+    name: deploy_postgres_data
   caddy_data:
   caddy_config:
