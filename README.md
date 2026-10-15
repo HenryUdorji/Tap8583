@@ -48,9 +48,13 @@ Tap8583/
 ## 🛠️ How to Build & Run
 
 ### 1. Use or Build the Client Log Listener (`listenerLib`)
-POS apps add it from Maven Central:
+POS apps add it from Maven Central and attach it to the logger of their jPOS channel:
 ```kotlin
-debugImplementation("dev.sarari:tap8583-listener:1.0.0")
+implementation("dev.sarari:tap8583-listener:1.0.0")
+```
+```kotlin
+val tap8583 = VisualizerLogListener(apiKey = "YOUR_INGEST_KEY", endpoint = "https://your-domain/api/v1/events")
+channel.setLogger(org.jpos.util.Logger().apply { addListener(tap8583) }, "channel")
 ```
 See [`listenerLib/INTEGRATION.md`](listenerLib/INTEGRATION.md) for setup and for publishing new versions. To build the JAR yourself:
 ```bash
