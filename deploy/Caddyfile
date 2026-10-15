@@ -1,8 +1,11 @@
-{
-	email {$ACME_EMAIL}
-}
+# Served on 8443 behind Cloudflare's proxy: ports 80 and 443 on the server
+# belong to another app's Caddy. Cloudflare reaches us through an Origin Rule
+# (tap8583.<domain> -> port 8443) and verifies this Cloudflare Origin
+# Certificate under SSL/TLS mode "Full (strict)". The certificate files live
+# only on the server, in deploy/certs/ (see HETZNER_DEPLOYMENT.md).
+{$TAP8583_DOMAIN}:8443 {
+	tls /certs/origin.pem /certs/origin-key.pem
 
-{$TAP8583_DOMAIN} {
 	encode zstd gzip
 
 	header {
